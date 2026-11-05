@@ -170,7 +170,7 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
 const EXP_CATS = [
   ['food','超市·便利店'],['eat','外食·咖啡·外卖'],['home','房租·住房'],['util','水电燃气'],['tel','通信·网络'],
   ['sub','订阅服务'],['trans','交通'],['shop','购物·日用'],['cat','面面'],['health','医疗·药妆'],
-  ['fun','娱乐·爱好'],['edu','学习·书'],['social','人情·社交'],['ins','保险·税金'],['cash','现金取出'],
+  ['fun','娱乐·爱好'],['edu','学习·书'],['work','工作·素材'],['social','人情·社交'],['ins','保险·税金'],['cash','现金取出'],
   ['card','信用卡还款（未导入明细）'],['wallet','钱包充值（未导入明细）'],['other','其他支出'],['save','储蓄·投资']
 ];
 const INC_CATS = [['salary','工资'],['side','副业收入'],['refund','退款'],['inc_other','其他收入']];
@@ -213,6 +213,7 @@ const RULES_SRC = [
   ['trans', ['JR','SUICA','スイカ','PASMO','パスモ','東京メトロ','トウキョウメトロ','都営','京王','小田急','東急','西武','東武','京急','京成','相鉄','つくばエクスプレス','りんかい','ゆりかもめ','タクシー','TAXI','GOタクシー','UBER','新幹線','ANA','JAL','PEACH','ジェットスター','駐輪','バス']],
   ['health',['薬局','ドラッグ','マツモトキヨシ','マツキヨ','ウエルシア','スギ薬局','ツルハ','サンドラッグ','ココカラファイン','ダイコク','クリニック','病院','医院','歯科','皮膚科','内科','眼科','整骨','調剤']],
   ['fun',   ['アニメイト','ANIMATE','とらのあな','メロンブックス','ゲーマーズ','STEAM','NINTENDO','任天堂','PLAYSTATION','カラオケ','映画','シネマ','TOHO','チケット','ぴあ','イープラス','ローチケ','DLSITE','ニコニコ','ガチャ','ポケモン','サンリオ','コラボカフェ','グッズ','ライブ']],
+  ['work',  ['PIXTA','SHUTTERSTOCK','ADOBESTOCK','ENVATO','ARTLIST','EPIDEMICSOUND','MOTIONARRAY','STORYBLOCKS','ISTOCK','GETTYIMAGES','素材']],
   ['edu',   ['書店','紀伊國屋','紀伊国屋','丸善','ジュンク堂','ブックオフ','KINDLE','UDEMY','英会話','オンライン英会話','COURSERA','書籍']],
   ['shop',  ['AMAZON','アマゾン','楽天市場','ラクテンイチバ','ヨドバシ','ビックカメラ','ユニクロ','UNIQLO','GU','無印','MUJI','ニトリ','ダイソー','DAISO','セリア','キャンドゥ','ドンキホーテ','ドンキ','ロフト','LOFT','ハンズ','ZOZO','メルカリ','SHEIN','QOO10','ヤフーショッピング','PAYPAYモール','ルミネ','アトレ','パルコ','PARCO','しまむら','3COINS','スリーコインズ','IKEA','イケア']],
   ['ins',   ['保険','生命','損保','国民健康保険','国保','年金','住民税','所得税','税金','区役所','市役所','ふるさと納税']],
@@ -273,6 +274,7 @@ const BILL_CATS = [
   ['sub',   /会员|订阅|サブスク/],
   ['trans', /交通|出行|打车|地铁|公交|火车|机票|加油|爱车|養車|交通費|自動車/],
   ['health',/医疗|医療|健康|药|薬|病院/],
+  ['work',  /素材|办公|工作|仕事|事業|経費|业务/],
   ['edu',   /教育|培训|学习|书籍|図書|教養|書籍/],
   ['fun',   /文化|休闲|娱乐|游戏|运动|旅行|旅游|酒店|趣味|娯楽|レジャー/],
   ['social',/红包|人情|社交|礼物|礼金|交際|贈答|转账/],
@@ -729,9 +731,17 @@ function pillIdle(){
   if (Sync.last) return setSave('ok', '已同步 ' + Sync.last.toTimeString().slice(0,5));
   setSave('', '同步中…');
 }
-function stateBody(){
+const DERIVED = ['sus','warn','_sw'];
+function compactTx(x){
+  const y = { ...x };
+  for (const k of DERIVED) delete y[k];
+  if (!y.m) { delete y.st; delete y.w; delete y.p; }
+  if (!y.mc) delete y.c;
+  return y;
+}
+function stateBody(compact){
   return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, su:S.settings.su||0 },
-           imports:S.settings.imports.slice(-200), txns:S.txns, del:S.del };
+           imports:S.settings.imports.slice(-200), txns: compact ? S.txns.map(compactTx) : S.txns, del:S.del };
 }
 function applyState(b){
   if (!b) return;
@@ -753,10 +763,47 @@ function authFp(b){
 }
 function bury(kind, id){ S.del[kind + ':' + id] = Date.now(); }
 function stamp(...xs){ const t = Date.now(); for (const x of xs) if (x) x.u = t; }
+const IDB = { db:null, failed:false, writing:false, again:false };
+function idbOpen(){
+  if (IDB.db || IDB.failed) return Promise.resolve(IDB.db);
+  return new Promise(res=>{
+    try {
+      const rq = indexedDB.open('mianmian-ledger', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+      rq.onsuccess = () => { IDB.db = rq.result; res(IDB.db); };
+      rq.onerror = () => { IDB.failed = true; res(null); };
+      rq.onblocked = () => { IDB.failed = true; res(null); };
+    } catch(e){ IDB.failed = true; res(null); }
+  });
+}
+function idbOp(mode, fn){
+  return idbOpen().then(db => new Promise((res, rej) => {
+    if (!db) return rej(new Error('no-idb'));
+    try { const tx = db.transaction('kv', mode); const st = tx.objectStore('kv'); const rq = fn(st); tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); }
+    catch(e){ rej(e); }
+  }));
+}
+const idbGet = k => idbOp('readonly', st => st.get(k));
+const idbSet = (k, v) => idbOp('readwrite', st => st.put(v, k));
+let localFailNoted = false;
 function saveLocal(){
   if (S.demo) return true;
-  try { localStorage.setItem(LS_DATA, JSON.stringify(stateBody())); return true; }
-  catch(e){ toast('这台设备的浏览器存储满了或被禁用（比如无痕模式）。设置同步，或下载一份备份。'); return false; }
+  if (IDB.writing) { IDB.again = true; return true; }
+  IDB.writing = true;
+  const body = JSON.stringify(stateBody(true));
+  idbSet('state', body).then(()=>{
+    localFailNoted = false;
+    try { localStorage.removeItem(LS_DATA); } catch(e){}
+  }).catch(()=>{
+    try { localStorage.setItem(LS_DATA, body); }
+    catch(e){ if (!localFailNoted) { localFailNoted = true; toast('这台设备的浏览器不让保存数据（存储满了，或者是无痕模式）。刷新前请先设置同步，或下载一份备份。'); } setSave('err', '这台设备保存失败'); }
+  }).finally(()=>{ IDB.writing = false; if (IDB.again) { IDB.again = false; saveLocal(); } });
+  return true;
+}
+async function loadLocal(){
+  try { const raw = await idbGet('state'); if (raw) return JSON.parse(raw); } catch(e){}
+  try { const raw = localStorage.getItem(LS_DATA); if (raw) return JSON.parse(raw); } catch(e){}
+  return null;
 }
 function markDirty(months, settings){
   if (S.demo) return;
@@ -888,11 +935,11 @@ async function syncNow(opts){
       const beforeTx = new Map(S.txns.map(x=>[x.i, x.u||0]));
       applyState(mergeState(stateBody(), rs));
       changed = before !== fnv(JSON.stringify([S.sources, S.txns.length, S.settings.su])) || S.txns.some(x=>beforeTx.get(x.i)!==(x.u||0));
-      if (changed) analyze(S.txns, S.sources, S.settings.learned);
-      if (!Sync.dirty && authFp(stateBody()) !== authFp(rs)) Sync.dirty = true;
+      analyze(S.txns, S.sources, S.settings.learned);
+      if (!Sync.dirty && authFp(stateBody(true)) !== authFp(rs)) Sync.dirty = true;
     } else Sync.dirty = true;
     if (Sync.dirty) {
-      const file = await encryptState(stateBody(), Sync.pass);
+      const file = await encryptState(stateBody(true), Sync.pass);
       try { await ghPut(file, Sync.sha); }
       catch(e){ if (e.code==='gh' && (e.status===409 || e.status===422)) { Sync.running = false; return syncNow(); } throw e; }
       Sync.dirty = false;
@@ -948,7 +995,8 @@ function disconnectSync(){ Sync.cfg = null; Sync.pass = null; Sync.keyCache = nu
 async function initStore(){
   loadCfg();
   let had = false;
-  try { const raw = localStorage.getItem(LS_DATA); if (raw) { applyState(JSON.parse(raw)); had = true; } } catch(e){}
+  const local = await loadLocal();
+  if (local) { applyState(local); had = true; }
   if (!had && !Sync.cfg) { loadDemo(); render(); pillIdle(); return; }
   S.month = latestMonth(); analyze(S.txns, S.sources, S.settings.learned);
   render(); pillIdle();
@@ -1347,9 +1395,9 @@ function autoPickSource(fileName, head){
   const g = guessSource(fileName, head);
   S.srcGuessed = !!g;
   const zh = /交易时间|交易对方|金额|收\/支|商品说明|交易分类/.test(String(head||'').slice(0,3000));
-  if (!g) { if (!S.importSrc || S.importSrc==='new') { S.importSrc = 'new'; S.newSrc = { name:'', type:S.newSrc.type, cur: zh ? 'CNY' : 'JPY' }; } return; }
+  if (!g) { if (!S.importSrc || S.importSrc==='new') { S.importSrc = 'new'; S.newSrc = { name: S.newSrc.auto ? '' : S.newSrc.name, type:S.newSrc.type, cur: zh ? 'CNY' : (S.newSrc.cur||'JPY') }; } return; }
   const ex = S.sources.find(s=>norm(s.name)===norm(g.name));
-  if (ex) S.importSrc = ex.id; else { S.importSrc = 'new'; S.newSrc = { name:g.name, type:g.type, cur:g.cur||'JPY' }; }
+  if (ex) S.importSrc = ex.id; else { S.importSrc = 'new'; S.newSrc = { name:g.name, type:g.type, cur:g.cur||'JPY', auto:true }; }
 }
 function reparse(){
   const P = S.pending; if (!P || P.kind!=='csv') return;
@@ -1500,7 +1548,7 @@ document.addEventListener('click', e=>{
     case 'add-fixed': S.settings.fixed.push({ id:'f'+rid(), name:'', amt:0, cat:'sub', kw:'' }); markDirty([], true); render(); break;
     case 'del-fixed': S.settings.fixed = S.settings.fixed.filter(f=>f.id!==id); markDirty([], true); render(); break;
     case 'del-src': if (arm(b,'src'+id,'再点一次：删除来源和全部记录')) { const ms = new Set(S.txns.filter(t=>t.s===id).map(t=>ymOf(t.d))); bury('s', id); for (const t of S.txns) if (t.s===id) bury('t', t.i); S.sources = S.sources.filter(s=>s.id!==id); S.txns = S.txns.filter(t=>t.s!==id); if (S.importSrc===id) S.importSrc=''; runAnalyze(false); markDirty(new Set([...ms, ...S.txns.map(t=>ymOf(t.d))]), true); render(); } break;
-    case 'dl-backup': download('面面家計簿-备份-' + todayStr() + '.json', JSON.stringify({ app:'mianmian-ledger-backup', v:2, ...stateBody() }), 'application/json'); toast('备份文件没加密，请放在安全的地方'); break;
+    case 'dl-backup': download('面面家計簿-备份-' + todayStr() + '.json', JSON.stringify({ app:'mianmian-ledger-backup', v:2, ...stateBody(true) }), 'application/json'); toast('备份文件没加密，请放在安全的地方'); break;
     case 'dl-csv': { const L = S.txns.filter(t=>ymOf(t.d)===S.month).sort((a,b)=>a.d<b.d?-1:1); const q = s=>'"'+String(s).replace(/"/g,'""')+'"'; const csv = '\uFEFF' + ['日期,内容,来源,分类,收支,金额,状态'].concat(L.map(t=>[t.d,q(t.t),q(srcName(t.s)),q(CAT_NAME[t.c]||''),t.o?'支出':'收入',t.a,{ok:'计入',dup:'重复',xfer:'转账'}[t.st]].join(','))).join('\n'); download('面面家計簿-' + S.month + '.csv', csv, 'text/csv'); break; }
     case 'pick-restore': $('#restoreFile').click(); break;
     case 'sync-connect': doConnect(b); break;
@@ -1548,7 +1596,7 @@ document.addEventListener('change', e=>{
 document.addEventListener('input', e=>{
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; renderTxRows(); }
-  if (t.id === 'newSrcName') { S.newSrc.name = t.value; }
+  if (t.id === 'newSrcName') { S.newSrc.name = t.value; S.newSrc.auto = false; }
 });
 document.addEventListener('dragover', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d){ e.preventDefault(); d.classList.add('over'); } });
 document.addEventListener('dragleave', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
