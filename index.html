@@ -224,6 +224,7 @@ const RULES = RULES_SRC.map(([c, kws]) => [c, kws.map(k => norm(k))]);
 
 const PLATFORMS = [
   ['paypay','PayPay',/PAYPAY|ペイペイ/],
+  ['paypal','PayPal',/PAYPAL|ペイパル/],
   ['rakutenpay','楽天ペイ',/楽天ペイ|ラクテンペイ|RAKUTENPAY/],
   ['merpay','メルペイ',/メルペイ|MERPAY/],
   ['aupay','au PAY',/AUPAY|AUペイ/],
@@ -243,7 +244,7 @@ const CASH_OUT = /ATM|CD引出|引出|ヒキダシ|セブン銀行|イーネッ�
 const CHARGE = /チャージ|CHARGE|オートチャージ/;
 const STRONG_OUT = /チャージ|CHARGE|(?<!口座)振替|資金移動|TRANSFER|ジブン|本人/;
 const STRONG_IN  = /チャージ|CHARGE|(?<!口座)振替|資金移動|TRANSFER|入金|オートチャージ/;
-const WALLET_IN  = /チャージ|CHARGE|入金|銀行|口座|オートチャージ/;
+const WALLET_IN  = /チャージ|CHARGE|入金|銀行|口座|オートチャージ|DEPOSIT|FUNDING|TRANSFERFROM|充值/;
 const INCOME_SAL = /給与|給料|賞与|キュウヨ|キユウヨ|ショウヨ|シヨウヨ|SALARY|PAYROLL/;
 const SKIP_DESC = /^(合計|小計|総合計|前月繰越|繰越|今回ご請求額|ご請求額|お支払合計)/;
 const NOISE = /VISA国内利用|VISA海外利用|国内利用|海外利用|VS|Vデビット|JCBデビット|デビット|お支払い|お支払|支払い|支払|ショッピング|ご利用|利用|カード|店舗|本店|支店/g;
@@ -1290,7 +1291,7 @@ function guessSource(name, head){
   return guessFrom(title);
 }
 function guessFrom(n){
-  const G = [[/PAYPAYカード|PAYPAYCARD/,'PayPayカード','card'],[/楽天カード|ENAVI|RAKUTENCARD/,'楽天カード','card'],[/三井住友カード|VPASS|SMBCCARD/,'三井住友カード','card'],[/JCB/,'JCBカード','card'],[/イオンカード|AEONCARD/,'イオンカード','card'],[/エポス|EPOS/,'エポスカード','card'],[/セゾン|SAISON/,'セゾンカード','card'],[/PAYPAY/,'PayPay','wallet'],[/SUICA/,'Suica','wallet'],[/楽天銀行/,'楽天銀行','bank'],[/三井住友銀行|SMBC/,'三井住友銀行','bank'],[/三菱UFJ|MUFG/,'三菱UFJ銀行','bank'],[/みずほ|MIZUHO/,'みずほ銀行','bank'],[/ゆうちょ|JAPANPOST|JPBANK/,'ゆうちょ銀行','bank'],[/住信SBI|NEOBANK/,'住信SBIネット銀行','bank'],[/MONEYFORWARD|マネーフォワード|ZAIM|MONEYTREE/,'记账App导出','app']];
+  const G = [[/PAYPAYカード|PAYPAYCARD/,'PayPayカード','card'],[/楽天カード|ENAVI|RAKUTENCARD/,'楽天カード','card'],[/三井住友カード|VPASS|SMBCCARD/,'三井住友カード','card'],[/JCB/,'JCBカード','card'],[/イオンカード|AEONCARD/,'イオンカード','card'],[/エポス|EPOS/,'エポスカード','card'],[/セゾン|SAISON/,'セゾンカード','card'],[/PAYPAY/,'PayPay','wallet'],[/PAYPAL|ペイパル/,'PayPal','wallet'],[/SUICA/,'Suica','wallet'],[/楽天銀行/,'楽天銀行','bank'],[/三井住友銀行|SMBC/,'三井住友銀行','bank'],[/三菱UFJ|MUFG/,'三菱UFJ銀行','bank'],[/みずほ|MIZUHO/,'みずほ銀行','bank'],[/ゆうちょ|JAPANPOST|JPBANK/,'ゆうちょ銀行','bank'],[/住信SBI|NEOBANK/,'住信SBIネット銀行','bank'],[/MONEYFORWARD|マネーフォワード|ZAIM|MONEYTREE/,'记账App导出','app']];
   if (/支付宝|ALIPAY/.test(n)) return { name:'支付宝', type:'wallet', cur:'CNY' };
   if (/微信|WECHAT/.test(n)) return { name:'微信支付', type:'wallet', cur:'CNY' };
   for (const [re,nm,type] of G) if (re.test(n)) return { name:nm, type, cur:'JPY' };
