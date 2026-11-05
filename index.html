@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>面面家計簿</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a quiet ledger. Summary strip on top, the month's truth first,
+   then the evidence (transactions), then tools (import, plan). Indigo ink on cool paper. */
+:root{
+  --bg:#f3f5f9; --surface:#ffffff; --ink:#1a2232; --muted:#5c6577; --line:#dde2ea;
+  --accent:#3456a3; --accent-soft:#e7edf9;
+  --good:#2b7a56; --good-soft:#e2f2ea; --warn:#a2650c; --warn-soft:#fbefd9; --bad:#ae3a34; --bad-soft:#f8e2e0;
+  --font-d:'Noto Serif SC', 'Songti SC', serif;
+  --font-b:'Noto Sans SC', system-ui, 'PingFang SC', 'Hiragino Sans', 'Microsoft YaHei', sans-serif;
+  --font-n:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11151d; --surface:#191f2a; --ink:#e6eaf1; --muted:#99a2b4; --line:#2a3242;
+    --accent:#8fa9ee; --accent-soft:#222c43;
+    --good:#5fc596; --good-soft:#18302a; --warn:#e3aa50; --warn-soft:#33281a; --bad:#f07f78; --bad-soft:#3a2023;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11151d; --surface:#191f2a; --ink:#e6eaf1; --muted:#99a2b4; --line:#2a3242;
+  --accent:#8fa9ee; --accent-soft:#222c43;
+  --good:#5fc596; --good-soft:#18302a; --warn:#e3aa50; --warn-soft:#33281a; --bad:#f07f78; --bad-soft:#3a2023;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-b);font-size:15px;line-height:1.55}
+.num{font-family:var(--font-n);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 20px 64px}
+header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-content:space-between}
+.brand h1{font-family:var(--font-d);font-size:26px;margin:0;line-height:1.2;text-wrap:balance}
+.brand .sub{color:var(--muted);font-size:13px}
+.month{display:flex;align-items:center;gap:6px}
+.month b{font-family:var(--font-d);font-size:19px;min-width:120px;text-align:center}
+.iconbtn{border:1px solid var(--line);background:var(--surface);color:var(--ink);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px}
+.iconbtn:hover{border-color:var(--accent)}
+.savepill{cursor:pointer;font-size:12px;color:var(--muted);border:1px solid var(--line);padding:3px 10px;border-radius:999px;background:var(--surface);white-space:nowrap}
+.savepill.ok{color:var(--good)} .savepill.err{color:var(--bad);border-color:var(--bad)}
+nav.tabs{display:flex;gap:4px;margin:18px 0 16px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:inherit;font-weight:500;padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+.tab small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+.demo{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn);border-radius:10px;padding:10px 14px;margin-top:14px;font-size:14px}
+.demo[hidden]{display:none}
+.grid{display:grid;gap:14px}
+.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:860px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.two{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+@media (max-width:860px){.two{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h2{font-size:15px;margin:0 0 2px;font-weight:700}
+.card .h2sub{font-size:12px;color:var(--muted);margin:0 0 12px}
+.tile .lab{font-size:13px;color:var(--muted)}
+.tile .val{font-size:24px;font-weight:600;margin-top:2px}
+.tile .foot{font-size:12px;color:var(--muted);margin-top:4px}
+.tile.excl{background:var(--accent-soft);border-color:transparent}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.alerts{display:grid;gap:8px;margin:14px 0}
+.alert{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;border-radius:10px;padding:10px 14px;font-size:14px;border:1px solid}
+.alert.warn{background:var(--warn-soft);border-color:var(--warn)}
+.alert.info{background:var(--accent-soft);border-color:transparent}
+.bars{display:grid;gap:10px}
+.bar .row1{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.bar .row1 .amt{white-space:nowrap}
+.track{position:relative;height:8px;border-radius:99px;background:var(--line);margin-top:4px;overflow:hidden}
+.fill{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent)}
+.fill.good{background:var(--good)} .fill.warn{background:var(--warn)} .fill.bad{background:var(--bad)}
+.bar .row2{font-size:12px;color:var(--muted)}
+.list{display:grid;gap:0}
+.li{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.li:last-child{border-bottom:0}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+.pill.ok{background:var(--good-soft);color:var(--good)}
+.pill.dup{background:var(--bad-soft);color:var(--bad)}
+.pill.xfer{background:var(--accent-soft);color:var(--accent)}
+.pill.sus{background:var(--warn-soft);color:var(--warn)}
+.pill.none{border-color:var(--line);color:var(--muted)}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:500}
+.btn.sm{font-size:12px;padding:3px 8px;border-radius:6px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,.drop:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.chip{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:13px;padding:4px 10px;border-radius:999px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+input[type=text],input[type=number],input[type=search],select,textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+input[type=number]{width:110px}
+textarea{width:100%;min-height:120px;font-family:var(--font-n);font-size:12px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:500;background:var(--bg);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+tr.excluded td{color:var(--muted)}
+tr.excluded td .desc{text-decoration:line-through;text-decoration-color:var(--line)}
+.why{font-size:12px;color:var(--muted);margin-top:2px}
+.src{font-size:12px;color:var(--muted);white-space:nowrap}
+td select{font-size:13px;padding:3px 6px;max-width:150px}
+.acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.drop{display:grid;place-items:center;text-align:center;border:2px dashed var(--line);border-radius:12px;padding:28px 16px;background:var(--surface);cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.drop .big{font-size:16px;font-weight:500}
+.drop .small{font-size:13px;color:var(--muted)}
+.field{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.fields{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.muted{color:var(--muted)} .small{font-size:13px}
+.steps{display:grid;gap:14px}
+.kv{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px}
+.kv span b{font-weight:600}
+.trend{width:100%;height:auto;max-height:240px;display:block}
+.trend text{fill:var(--muted);font-size:11px;font-family:var(--font-b)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 16px;border-radius:10px;font-size:14px;max-width:min(92vw,560px);z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.toast[hidden]{display:none}
+.empty{color:var(--muted);font-size:14px;padding:18px 0;text-align:center}
+.planrow{display:grid;grid-template-columns:minmax(0,1.4fr) 120px minmax(0,1fr) minmax(0,1fr) 34px;gap:8px;align-items:center;margin-bottom:8px}
+.planrow input,.planrow select{width:100%}
+@media (max-width:640px){.planrow{grid-template-columns:1fr 1fr}.planrow .x{justify-self:end}}
+.budgetgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.budgetgrid label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+@media (prefers-reduced-motion: no-preference){.fill{transition:width .3s ease}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>面面家計簿</h1>
+      <div class="sub">每月真实收支 · 毎月（まいつき）の本当（ほんとう）の収支（しゅうし）</div>
+    </div>
+    <div class="month">
+      <button class="iconbtn" id="prevM" aria-label="上个月">‹</button>
+      <b id="monthLabel">—</b>
+      <button class="iconbtn" id="nextM" aria-label="下个月">›</button>
+      <span class="savepill" id="savePill">连接中…</span>
+    </div>
+  </header>
+  <div class="demo" id="demoBar" hidden>
+    <span>这是<b>示例数据</b>，演示查重和转账识别，不会保存。导入第一份账单或连接同步时会自动清掉。</span>
+    <button class="btn sm" data-act="clear-demo">清掉示例，从空白开始</button>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab" data-v="overview">本月概览<small>概要（がいよう）</small></button>
+    <button class="tab" data-v="txns">明细与查重<small>明細（めいさい）</small></button>
+    <button class="tab" data-v="import">上传账单<small>取込（とりこみ）</small></button>
+    <button class="tab" data-v="plan">固定支出与预算<small>固定費（こていひ）・予算（よさん）</small></button>
+  </nav>
+  <main id="view"></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// CORE-START
+const EXP_CATS = [
+  ['food','超市·便利店'],['eat','外食·咖啡·外卖'],['home','房租·住房'],['util','水电燃气'],['tel','通信·网络'],
+  ['sub','订阅服务'],['trans','交通'],['shop','购物·日用'],['cat','面面'],['health','医疗·药妆'],
+  ['fun','娱乐·爱好'],['edu','学习·书'],['social','人情·社交'],['ins','保险·税金'],['cash','现金取出'],
+  ['card','信用卡还款（未导入明细）'],['wallet','钱包充值（未导入明细）'],['other','其他支出'],['save','储蓄·投资']
+];
+const INC_CATS = [['salary','工资'],['side','副业收入'],['refund','退款'],['inc_other','其他收入']];
+const CAT_NAME = Object.fromEntries([...EXP_CATS, ...INC_CATS]);
+const SRC_TYPES = [['card','信用卡'],['bank','银行账户'],['wallet','电子钱包（PayPay等）'],['app','记账App汇总'],['other','其他']];
+const SRC_TYPE_NAME = Object.fromEntries(SRC_TYPES);
+
+function norm(s){
+  return String(s ?? '').normalize('NFKC').toUpperCase()
+    .replace(/[\s　]+/g,'')
+    .replace(/[・･,，.。()（）\[\]【】「」『』*＊_\-－―‐−/／\\|:：;；'"`’”“!！?？#＃&＆+＋~〜]/g,'');
+}
+function spaced(s){
+  return ' ' + String(s ?? '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z぀-ヿ㐀-鿿]+/g,' ') + ' ';
+}
+function kwHit(raw, n, kw){
+  if (/^[A-Z0-9]{1,3}$/.test(kw)) {
+    return new RegExp('(^|[^A-Z0-9])' + kw + '([^A-Z0-9]|$)').test(spaced(raw));
+  }
+  return n.includes(kw) || (kw.length >= 3 && loose(n).includes(loose(kw)));
+}
+function loose(n){ return n.replace(/ー/g,''); }
+
+const RULES_SRC = [
+  ['cat',   ['ペット','動物病院','どうぶつ病院','アニマルクリニック','ペットフード','猫砂','ねこ','PETGO','ペテモ','PETEMO']],
+  ['eat',   ['スターバックス','STARBUCKS','ドトール','タリーズ','コメダ','マクドナルド','MCDONALD','すき家','吉野家','松屋','サイゼリヤ','ガスト','スシロー','くら寿司','はま寿司','UBEREATS','出前館','WOLT','モスバーガー','ケンタッキー','丸亀','カフェ','CAFE','COFFEE','珈琲','レストラン','居酒屋','ラーメン','食堂','ベーカリー','ミスタードーナツ','ミスド','サーティワン','焼肉','バーガー']],
+  ['food',  ['スーパー','イオン','AEON','西友','セイユー','まいばすけっと','マイバスケット','オーケー','成城石井','業務スーパー','ヨーカドー','サミット','マルエツ','いなげや','ライフコーポレーション','ライフ','オオゼキ','セブンイレブン','SEVENELEVEN','セブン','ローソン','LAWSON','ファミリーマート','FAMILYMART','ファミマ','ミニストップ','デイリーヤマザキ','ニューデイズ','NEWDAYS','コープ','生協','カルディ','KALDI']],
+  ['home',  ['家賃','ヤチン','賃料','管理費','不動産','フドウサン','更新料']],
+  ['util',  ['東京電力','トウキョウデンリョク','トウキヨウデンリヨク','電力','デンリョク','デンリヨク','電気','でんき','東京ガス','トウキョウガス','ガス料金','水道','スイドウ','TEPCO','LOOOP']],
+  ['tel',   ['ドコモ','DOCOMO','KDDI','AU','ソフトバンク','SOFTBANK','楽天モバイル','AHAMO','POVO','LINEMO','UQ','ワイモバイル','YMOBILE','NURO','ビッグローブ','BIGLOBE','光回線','WIFI','IIJ','MINEO']],
+  ['sub',   ['NETFLIX','ネットフリックス','SPOTIFY','スポティファイ','AMAZONPRIME','プライム会費','APPLECOMBILL','ITUNES','ICLOUD','YOUTUBE','DISNEY','UNEXT','ABEMA','HULU','DAZN','DアニメストアDANIME','Dアニメ','ANTHROPIC','CLAUDE','OPENAI','CHATGPT','ADOBE','MICROSOFT','CANVA','NOTION','PATREON','FANBOX','FANTIA','ファンティア','CIEN','GOOGLEONE','XPREMIUM','TWITTERBLUE','DUOLINGO']],
+  ['trans', ['JR','SUICA','スイカ','PASMO','パスモ','東京メトロ','トウキョウメトロ','都営','京王','小田急','東急','西武','東武','京急','京成','相鉄','つくばエクスプレス','りんかい','ゆりかもめ','タクシー','TAXI','GOタクシー','UBER','新幹線','ANA','JAL','PEACH','ジェットスター','駐輪','バス']],
+  ['health',['薬局','ドラッグ','マツモトキヨシ','マツキヨ','ウエルシア','スギ薬局','ツルハ','サンドラッグ','ココカラファイン','ダイコク','クリニック','病院','医院','歯科','皮膚科','内科','眼科','整骨','調剤']],
+  ['fun',   ['アニメイト','ANIMATE','とらのあな','メロンブックス','ゲーマーズ','STEAM','NINTENDO','任天堂','PLAYSTATION','カラオケ','映画','シネマ','TOHO','チケット','ぴあ','イープラス','ローチケ','DLSITE','ニコニコ','ガチャ','ポケモン','サンリオ','コラボカフェ','グッズ','ライブ']],
+  ['edu',   ['書店','紀伊國屋','紀伊国屋','丸善','ジュンク堂','ブックオフ','KINDLE','UDEMY','英会話','オンライン英会話','COURSERA','書籍']],
+  ['shop',  ['AMAZON','アマゾン','楽天市場','ラクテンイチバ','ヨドバシ','ビックカメラ','ユニクロ','UNIQLO','GU','無印','MUJI','ニトリ','ダイソー','DAISO','セリア','キャンドゥ','ドンキホーテ','ドンキ','ロフト','LOFT','ハンズ','ZOZO','メルカリ','SHEIN','QOO10','ヤフーショッピング','PAYPAYモール','ルミネ','アトレ','パルコ','PARCO','しまむら','3COINS','スリーコインズ','IKEA','イケア']],
+  ['ins',   ['保険','生命','損保','国民健康保険','国保','年金','住民税','所得税','税金','区役所','市役所','ふるさと納税']],
+  ['save',  ['証券','ショウケン','NISA','つみたて','積立','定期預金','IDECO']]
+];
+const RULES = RULES_SRC.map(([c, kws]) => [c, kws.map(k => norm(k))]);
+
+const PLATFORMS = [
+  ['paypay','PayPay',/PAYPAY|ペイペイ/],
+  ['rakutenpay','楽天ペイ',/楽天ペイ|ラクテンペイ|RAKUTENPAY/],
+  ['merpay','メルペイ',/メルペイ|MERPAY/],
+  ['aupay','au PAY',/AUPAY|AUペイ/],
+  ['dbarai','d払い',/D払い|D払イ|DBARAI/],
+  ['suica','Suica',/SUICA|スイカ/],
+  ['pasmo','PASMO',/PASMO|パスモ/],
+  ['kyash','Kyash',/KYASH/],
+  ['amazonpay','Amazon Pay',/AMAZONPAY/],
+  ['linepay','LINE Pay',/LINEPAY/],
+  ['revolut','Revolut',/REVOLUT/]
+];
+const CARD_CO = /カードサービス|カード会社|クレジット|ラクテンカード|楽天カード|ミツイスミトモカード|三井住友カード|SMBCカード|JCB|ジエーシービー|ジェーシービー|VISA|ビザ|MUFGカード|ニコス|NICOS|イオンカード|イオンクレジット|エポス|EPOS|セゾン|SAISON|オリコ|ORICO|アメックス|AMEX|アメリカンエキスプレス|ビューカード|VIEWカード|PAYPAYカード|ペイペイカード|ライフカード|セディナ|ダイナース|DCカード|UCカード|ジャックス|JACCS|アプラス|ポケットカード|Dカード/;
+const CARD_CO_L = new RegExp(CARD_CO.source.replace(/ー/g,''));
+const isCardCo = n => CARD_CO.test(n) || CARD_CO_L.test(loose(n));
+const DEBIT = /デビット|DEBIT/;
+const CASH_OUT = /ATM|CD引出|引出|ヒキダシ|セブン銀行|イーネット|ローソン銀行|ゆうちょATM/;
+const CHARGE = /チャージ|CHARGE|オートチャージ/;
+const STRONG_OUT = /チャージ|CHARGE|(?<!口座)振替|資金移動|TRANSFER|ジブン|本人/;
+const STRONG_IN  = /チャージ|CHARGE|(?<!口座)振替|資金移動|TRANSFER|入金|オートチャージ/;
+const WALLET_IN  = /チャージ|CHARGE|入金|銀行|口座|オートチャージ/;
+const INCOME_SAL = /給与|給料|賞与|キュウヨ|キユウヨ|ショウヨ|シヨウヨ|SALARY|PAYROLL/;
+const SKIP_DESC = /^(合計|小計|総合計|前月繰越|繰越|今回ご請求額|ご請求額|お支払合計)/;
+const NOISE = /VISA国内利用|VISA海外利用|国内利用|海外利用|VS|Vデビット|JCBデビット|デビット|お支払い|お支払|支払い|支払|ショッピング|ご利用|利用|カード|店舗|本店|支店/g;
+const ALIASES = [['アマゾン','AMAZON'],['AMAZONCOJP','AMAZON'],['AMAZONCO','AMAZON'],['スターバックス','STARBUCKS'],['マクドナルド','MCDONALDS'],['ローソン','LAWSON'],['ファミリーマート','FAMILYMART'],['ファミマ','FAMILYMART'],['セブンイレブン','SEVENELEVEN'],['ユニクロ','UNIQLO'],['ネットフリックス','NETFLIX'],['スポティファイ','SPOTIFY'],['マツキヨ','マツモトキヨシ']];
+
+function platformOf(n){ for (const [k,name,re] of PLATFORMS) if (re.test(n)) return k; return null; }
+function platformName(k){ const p = PLATFORMS.find(p=>p[0]===k); return p ? p[1] : k; }
+
+function categorize(x, srcType, learned){
+  const n = norm(x.t);
+  const key = learnKey(x.t);
+  if (learned && learned[key]) return learned[key];
+  if (!x.o) {
+    if (INCOME_SAL.test(n)) return 'salary';
+    if (/返金|返品|キャンセル|取消|REFUND/.test(n) || srcType === 'card') return 'refund';
+    return 'inc_other';
+  }
+  for (const [c, kws] of RULES) for (const k of kws) if (kwHit(x.t, n, k)) return c;
+  return 'other';
+}
+function learnKey(t){ return norm(t).replace(/[0-9]+/g,'').slice(0,24); }
+
+function parseAmount(s){
+  if (s == null) return NaN;
+  let t = String(s).normalize('NFKC').trim().replace(/[−–—‐]/g,'-');
+  if (!t || /^-+$/.test(t)) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(t)) neg = true;
+  if (/^[-▲△]/.test(t) || /-$/.test(t)) neg = true;
+  const digits = t.replace(/[^0-9.]/g,'');
+  if (!digits || !/[0-9]/.test(digits)) return NaN;
+  const v = parseFloat(digits);
+  if (!isFinite(v)) return NaN;
+  return neg ? -v : v;
+}
+function pad(n){ return String(n).padStart(2,'0'); }
+function validYMD(y,m,d){ y=+y;m=+m;d=+d; if(!(y>1990&&y<2100&&m>=1&&m<=12&&d>=1&&d<=31)) return null; const dt=new Date(Date.UTC(y,m-1,d)); if(dt.getUTCMonth()!==m-1) return null; return y+'-'+pad(m)+'-'+pad(d); }
+function parseDate(s, refYear){
+  if (s == null) return null;
+  const t = String(s).normalize('NFKC').trim();
+  if (!t) return null;
+  let m;
+  if ((m = t.match(/(\d{4})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/))) return validYMD(m[1],m[2],m[3]);
+  if ((m = t.match(/^(\d{4})(\d{2})(\d{2})(\D|$)/))) return validYMD(m[1],m[2],m[3]);
+  if ((m = t.match(/^(?:R|令和)\s*(\d{1,2})\s*[.\/年]\s*(\d{1,2})\s*[.\/月]\s*(\d{1,2})/))) return validYMD(2018 + +m[1], m[2], m[3]);
+  if ((m = t.match(/^(\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(\D|$)/))) return validYMD(2000 + +m[1], m[2], m[3]);
+  if ((m = t.match(/^(\d{1,2})\s*[\/月]\s*(\d{1,2})\s*日?(\D|$)/)) && refYear) return validYMD(refYear, m[1], m[2]);
+  return null;
+}
+function addDays(ymd, n){ const [y,m,d]=ymd.split('-').map(Number); const dt=new Date(Date.UTC(y,m-1,d+n)); return dt.getUTCFullYear()+'-'+pad(dt.getUTCMonth()+1)+'-'+pad(dt.getUTCDate()); }
+function dayDiff(a,b){ return Math.round((Date.parse(a+'T00:00:00Z')-Date.parse(b+'T00:00:00Z'))/86400000); }
+
+function decodeBuffer(buf){
+  const u8 = new Uint8Array(buf);
+  try { return new TextDecoder('utf-8',{fatal:true}).decode(u8).replace(/^﻿/,''); }
+  catch(e){ try { return new TextDecoder('shift_jis').decode(u8); } catch(e2){ return new TextDecoder('utf-8').decode(u8); } }
+}
+function parseCSV(text){
+  const first = text.split(/\r?\n/).slice(0,10).join('\n');
+  const delim = (first.match(/\t/g)||[]).length > (first.match(/,/g)||[]).length ? '\t' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i=0;i<text.length;i++){
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i+1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === delim) { row.push(cell); cell=''; }
+    else if (c === '\n' || c === '\r') { if (c==='\r' && text[i+1]==='\n') i++; row.push(cell); rows.push(row); row=[]; cell=''; }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.map(r=>r.map(c=>c.trim())).filter(r=>r.some(c=>c!==''));
+}
+
+const HK = {
+  date:['利用日','ご利用日','お取引日','取引日','取扱日','日付','年月日','日時','決済日','計上日','DATE'],
+  desc:['利用店名','ご利用店名','ご利用先','利用先','加盟店','取引先','店名','摘要','お取引内容','取引内容','内容','品名','商品名','明細','DESCRIPTION','PAYEE','支払先','MEMO','備考'],
+  amt:['利用金額','ご利用金額','支払総額','金額','支払金額','お支払金額','請求金額','AMOUNT'],
+  out:['出金金額','出金額','お引出金額','お支払金額','引出','出金','支出','WITHDRAWAL','DEBIT'],
+  inn:['入金金額','入金額','お預入金額','お預り金額','預入','入金','収入','DEPOSIT','CREDIT'],
+  bad:['残高','BALANCE','手数料','繰越','海外','通貨','レート','ポイント','番号','回数','区分','方法']
+};
+const HKN = Object.fromEntries(Object.entries(HK).map(([k,v])=>[k,v.map(norm)]));
+function hdrFind(hdr, key, exclude){
+  for (const kw of HKN[key]) {
+    for (let c=0;c<hdr.length;c++){
+      if (exclude.includes(c)) continue;
+      const h = hdr[c];
+      if (!h.includes(kw)) continue;
+      if (key !== 'date' && key !== 'desc' && HKN.bad.some(b=>h.includes(b))) continue;
+      return c;
+    }
+  }
+  return -1;
+}
+function detectLayout(rows){
+  let best = -1, bestScore = 0;
+  for (let r=0; r<Math.min(rows.length, 25); r++){
+    const hdr = rows[r].map(norm);
+    let score = 0;
+    for (const key of ['date','desc','amt','out','inn']) if (hdr.some(h=>h && h.length<20 && HKN[key].some(k=>h.includes(k)))) score++;
+    if (score > bestScore) { bestScore = score; best = r; }
+  }
+  if (bestScore >= 2) {
+    const hdr = rows[best].map(norm);
+    const L = { headerRow: best, cols: rows[best].map((h,i)=>h || ('列'+(i+1))), dateCol:-1, descCols:[], amtCol:-1, outCol:-1, inCol:-1 };
+    L.dateCol = hdrFind(hdr,'date',[]);
+    const d1 = hdrFind(hdr,'desc',[L.dateCol]);
+    if (d1>=0) { L.descCols.push(d1); const d2 = hdrFind(hdr,'desc',[L.dateCol,d1]); if (d2>=0) L.descCols.push(d2); }
+    const used = [L.dateCol, ...L.descCols];
+    L.inCol = hdrFind(hdr,'inn',used);
+    L.outCol = hdrFind(hdr,'out',[...used, L.inCol]);
+    if (L.inCol < 0 || L.outCol < 0) { L.inCol = -1; L.outCol = -1; L.amtCol = hdrFind(hdr,'amt',used); if (L.amtCol<0) L.amtCol = hdrFind(hdr,'out',used); }
+    if (L.dateCol >= 0 && (L.amtCol>=0 || L.outCol>=0)) return L;
+  }
+  return detectByContent(rows);
+}
+function detectByContent(rows){
+  const head = rows.slice(0, 60);
+  const ncol = Math.max(...head.map(r=>r.length));
+  const stats = [];
+  for (let c=0;c<ncol;c++){
+    let dates=0, nums=0, n=0, len=0, texts=0;
+    for (const r of head){ const v = r[c]; if (v==null || v==='') continue; n++;
+      if (parseDate(v)) dates++; else if (!isNaN(parseAmount(v)) && /^[\s¥￥\\$,0-9.\-−()▲△円]+$/.test(v.normalize('NFKC'))) nums++; else { texts++; len += v.length; } }
+    stats.push({c, n, dates, nums, texts, avg: texts? len/texts : 0});
+  }
+  const dateCol = stats.filter(s=>s.n && s.dates/s.n>0.5).sort((a,b)=>b.dates-a.dates)[0];
+  if (!dateCol) return null;
+  const numCols = stats.filter(s=>s.c!==dateCol.c && s.n && s.nums/s.n>0.6);
+  const textCols = stats.filter(s=>s.c!==dateCol.c && s.texts>0).sort((a,b)=>(b.texts*b.avg)-(a.texts*a.avg));
+  if (!numCols.length) return null;
+  const firstData = rows.findIndex(r=>parseDate(r[dateCol.c]));
+  const L = { headerRow: firstData-1, cols: Array.from({length:ncol},(_,i)=>'列'+(i+1)), dateCol: dateCol.c, descCols: textCols.length?[textCols[0].c]:[], amtCol: numCols[0].c, outCol:-1, inCol:-1 };
+  return L;
+}
+function rowsToTxns(rows, L, srcType, flip){
+  const out = []; let skipped = 0;
+  const today = new Date();
+  let refYear = null;
+  for (let r=L.headerRow+1; r<rows.length && !refYear; r++){ const d = parseDate(rows[r][L.dateCol]); if (d) refYear = +d.slice(0,4); }
+  if (!refYear) refYear = today.getFullYear();
+  for (let r=L.headerRow+1; r<rows.length; r++){
+    const row = rows[r];
+    let d = parseDate(row[L.dateCol], refYear);
+    if (!d) { skipped++; continue; }
+    const t = [...new Set(L.descCols.map(c=>row[c]).filter(Boolean))].join(' / ') || '（无描述）';
+    if (SKIP_DESC.test(norm(t))) { skipped++; continue; }
+    let a, o;
+    if (L.outCol>=0 && L.inCol>=0){
+      const vo = parseAmount(row[L.outCol]), vi = parseAmount(row[L.inCol]);
+      if (vo && Math.abs(vo)>0) { a = Math.abs(vo); o = vo>0?1:0; }
+      else if (vi && Math.abs(vi)>0) { a = Math.abs(vi); o = vi>0?0:1; }
+      else { skipped++; continue; }
+    } else {
+      const v = parseAmount(row[L.amtCol]);
+      if (!v || isNaN(v)) { skipped++; continue; }
+      const positiveIsOut = srcType !== 'bank';
+      o = (v>0) === positiveIsOut ? 1 : 0;
+      a = Math.abs(v);
+    }
+    if (flip) o = o ? 0 : 1;
+    out.push({ d, t: t.slice(0,120), a: Math.round(a), o });
+  }
+  return { list: out, skipped };
+}
+function fnv(s){ let h = 0x811c9dc5; for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h>>>0).toString(36); }
+function rid(){ return Math.random().toString(36).slice(2,10); }
+function hashList(list, srcId){
+  const seen = {};
+  for (const x of list){ const key = srcId+'|'+x.d+'|'+x.a+'|'+x.o+'|'+norm(x.t); seen[key] = (seen[key]||0)+1; x.h = fnv(key+'|'+seen[key]); }
+  return list;
+}
+function cleanDesc(t){
+  let n = norm(t);
+  for (const [a,b] of ALIASES) n = n.split(a).join(b);
+  for (const [,,re] of PLATFORMS) n = n.replace(new RegExp(re.source,'g'),'');
+  return n.replace(NOISE,'').replace(/[0-9]+/g,'');
+}
+function sim(a,b){
+  const x = cleanDesc(a), y = cleanDesc(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if ((x.length>=3 && y.includes(x)) || (y.length>=3 && x.includes(y))) return 0.8;
+  const bg = s=>{ const set = new Set(); for (let i=0;i<s.length-1;i++) set.add(s.slice(i,i+2)); return set; };
+  const A = bg(x), B = bg(y); if (!A.size || !B.size) return 0;
+  let inter = 0; for (const g of A) if (B.has(g)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+const TYPE_PRI = { wallet:4, bank:3, card:3, other:2, app:1 };
+
+function analyze(txns, sources, learned){
+  const S = Object.fromEntries(sources.map(s=>[s.id,s]));
+  const typeOf = x => (S[x.s] && S[x.s].type) || 'other';
+  for (const x of txns){
+    delete x.sus; delete x.warn;
+    if (!x.m){ x.st = 'ok'; x.w = ''; delete x.p; }
+    if (!x.mc) x.c = categorize(x, typeOf(x), learned);
+  }
+  const cov = {};
+  for (const x of txns){ const c = cov[x.s] || (cov[x.s] = {min:x.d, max:x.d}); if (x.d<c.min) c.min=x.d; if (x.d>c.max) c.max=x.d; }
+  const walletCovered = (p, d) => sources.find(s => s.type==='wallet' && platformOf(norm(s.name))===p && cov[s.id] && cov[s.id].min <= addDays(d,3) && cov[s.id].max >= addDays(d,-3));
+  const cardCovered = (d) => sources.find(s => s.type==='card' && cov[s.id] && cov[s.id].max >= addDays(d,-60) && cov[s.id].min <= d);
+  const free = x => !x.m && x.st === 'ok';
+
+  // 1) transfers between own accounts (paired)
+  const byAmt = {};
+  for (const x of txns) (byAmt[x.a] || (byAmt[x.a] = [])).push(x);
+  for (const group of Object.values(byAmt)){
+    if (group.length < 2) continue;
+    const outs = group.filter(x=>x.o && free(x)), ins = group.filter(x=>!x.o && free(x));
+    const pairs = [];
+    for (const x of outs) for (const y of ins){
+      if (x.s === y.s) continue;
+      const dd = Math.abs(dayDiff(x.d, y.d)); if (dd > 3) continue;
+      const nx = norm(x.t), ny = norm(y.t);
+      const yWallet = typeOf(y) === 'wallet';
+      const ok = STRONG_OUT.test(nx) || STRONG_IN.test(ny) || (yWallet && platformOf(nx) && platformOf(nx) === platformOf(norm(S[y.s].name)));
+      if (ok) pairs.push([dd, x, y]);
+    }
+    pairs.sort((a,b)=>a[0]-b[0]);
+    for (const [,x,y] of pairs){
+      if (!free(x) || !free(y)) continue;
+      x.st = 'xfer'; y.st = 'xfer'; x.p = y.i; y.p = x.i;
+      x.w = '转出到你自己的「' + (S[y.s]?S[y.s].name:'') + '」，钱只是换了个口袋';
+      y.w = '从你自己的「' + (S[x.s]?S[x.s].name:'') + '」转入，不算收入';
+    }
+  }
+  // 2) one-sided rules
+  for (const x of txns){
+    if (!free(x)) continue;
+    const n = norm(x.t), type = typeOf(x);
+    if (type === 'wallet' && !x.o && WALLET_IN.test(n) && !/返金|REFUND/.test(n)) {
+      x.st = 'xfer'; x.w = '充值进钱包的钱，不是收入'; continue;
+    }
+    if (type === 'bank' && x.o && isCardCo(n) && !DEBIT.test(n)) {
+      const cs = cardCovered(x.d);
+      if (cs) { const multi = sources.filter(s=>s.type==='card').length > 1; x.st = 'xfer'; x.w = multi ? '信用卡还款，消费明细已在你导入的卡账单里' : '信用卡还款，消费明细已在「' + cs.name + '」账单里'; }
+      else { if (!x.mc) x.c = 'card'; x.warn = 'card'; x.w = '信用卡还款，但还没导入对应的卡账单，暂按支出计'; }
+      continue;
+    }
+    if ((type === 'bank' || type === 'card' || type === 'app') && x.o) {
+      const p = platformOf(n);
+      if (p) {
+        const ws = walletCovered(p, x.d);
+        if (ws) { x.st = 'xfer'; x.w = '这笔钱进了「' + ws.name + '」，消费按那边的明细算'; continue; }
+        if (CHARGE.test(n)) { if (!x.mc) x.c = 'wallet'; x.warn = 'wallet'; x.w = '给' + platformName(p) + '充值，但还没导入它的账单，暂按支出计'; continue; }
+      }
+    }
+    if (type === 'bank' && x.o && (n === 'カード' || CASH_OUT.test(n))) {
+      if (!x.mc) x.c = 'cash'; x.w = '取现金，按支出计'; continue;
+    }
+  }
+  // 3) duplicates across sources / repeated imports
+  const groups = {};
+  for (const x of txns) if (free(x)) { const k = x.o + '|' + x.a; (groups[k] || (groups[k] = [])).push(x); }
+  const order = new Map(txns.map((x,k)=>[x.i,k]));
+  const score = x => (platformOf(norm(x.t)) ? 0 : 100) + (TYPE_PRI[typeOf(x)]||1)*10 + Math.min(cleanDesc(x.t).length, 9);
+  for (const g of Object.values(groups)){
+    if (g.length < 2) continue;
+    const cands = [];
+    for (let i=0;i<g.length;i++) for (let j=i+1;j<g.length;j++){
+      const x = g[i], y = g[j];
+      const dd = Math.abs(dayDiff(x.d, y.d));
+      const s = sim(x.t, y.t);
+      if (x.s === y.s) {
+        if (x.f && y.f && x.f !== y.f && dd === 0 && s >= 0.5) cands.push({x,y,dd,s,auto:true,same:true});
+        continue;
+      }
+      if (dd > 3) continue;
+      const plat = !!(platformOf(norm(x.t)) || platformOf(norm(y.t)));
+      const auto = plat || s >= 0.34 || (s >= 0.2 && dd === 0);
+      cands.push({x,y,dd,s,auto,same:false});
+    }
+    cands.sort((a,b)=> (b.auto-a.auto) || (b.s-a.s) || (a.dd-b.dd));
+    const used = new Set();
+    for (const c of cands){
+      if (used.has(c.x.i) || used.has(c.y.i)) continue;
+      used.add(c.x.i); used.add(c.y.i);
+      if (c.auto){
+        const [keep, drop] = c.same ? (order.get(c.x.i) <= order.get(c.y.i) ? [c.x, c.y] : [c.y, c.x]) : (score(c.x) >= score(c.y) ? [c.x, c.y] : [c.y, c.x]);
+        drop.st = 'dup'; drop.p = keep.i;
+        drop.w = c.same ? '同一来源重复导入，已保留另一条' : '和「' + (S[keep.s]?S[keep.s].name:'') + '」里 ' + keep.d.slice(5).replace('-','/') + ' 那笔是同一次消费';
+      } else {
+        c.x.sus = c.y.i; c.y.sus = c.x.i;
+      }
+    }
+  }
+  return txns;
+}
+
+function ymOf(d){ return d.slice(0,7); }
+function monthSummary(txns, ym){
+  const L = txns.filter(x=>ymOf(x.d)===ym);
+  const ok = L.filter(x=>x.st==='ok');
+  let income=0, expense=0, refund=0, save=0;
+  const byCat = {};
+  for (const x of ok){
+    if (x.o){
+      if (x.c === 'save') { save += x.a; continue; }
+      expense += x.a; byCat[x.c] = (byCat[x.c]||0) + x.a;
+    } else {
+      if (x.c === 'refund') { refund += x.a; continue; }
+      income += x.a;
+    }
+  }
+  expense -= refund;
+  const dup = L.filter(x=>x.st==='dup'), xfer = L.filter(x=>x.st==='xfer');
+  const sus = L.filter(x=>x.sus && x.st==='ok');
+  const warn = L.filter(x=>x.warn && x.st==='ok');
+  return { ym, count:L.length, income, expense, refund, save, net: income-expense, byCat,
+    dup, xfer, sus, warn,
+    excludedAmt: dup.reduce((s,x)=>s+x.a,0) + xfer.filter(x=>x.o).reduce((s,x)=>s+x.a,0) };
+}
+function fixedStatus(fixed, txns, ym){
+  const L = txns.filter(x=>ymOf(x.d)===ym && x.o && x.st==='ok');
+  const usedIds = new Set();
+  return fixed.map(f=>{
+    const kw = norm(f.kw||'');
+    let hit = null;
+    if (kw) hit = L.find(x=>!usedIds.has(x.i) && norm(x.t).includes(kw));
+    if (!hit && f.amt) hit = L.find(x=>!usedIds.has(x.i) && Math.abs(x.a - f.amt) <= Math.max(50, f.amt*0.03) && (!f.cat || x.c===f.cat));
+    if (hit) usedIds.add(hit.i);
+    return { f, hit };
+  });
+}
+// CORE-END
+
+// ================= app =================
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const yen = n => (n<0?'−':'') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+const fmtMonth = ym => { const [y,m] = ym.split('-'); return y + '年' + (+m) + '月'; };
+const shiftMonth = (ym, k) => { let [y,m] = ym.split('-').map(Number); m += k; while (m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+'-'+pad(m); };
+const nowYM = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1); };
+const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+
+const S = {
+  sources: [], txns: [], del: {}, settings: { budgets:{}, fixed:[], learned:{}, imports:[], su:0 },
+  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '',
+  importSrc: '', newSrc: { name:'', type:'card' }, pending: null, lastResult: null, busy: false
+};
+
+// ---------- storage: this device, plus optional encrypted sync to a private GitHub repo ----------
+const LS_DATA = 'mianmian-ledger-v2', LS_SYNC = 'mianmian-ledger-sync';
+const FILE = 'ledger.enc.json', KDF_IT = 310000;
+const Sync = { cfg:null, pass:null, salt:null, keyCache:null, sha:null, timer:null, running:false, again:false, dirty:false, last:null, state:'off', err:'', lastPull:0 };
+
+function setSave(state, text){
+  const el = $('#savePill');
+  el.className = 'savepill' + (state==='ok'?' ok':state==='err'?' err':'');
+  el.textContent = text;
+}
+function pillIdle(){
+  if (S.demo) return setSave('', '示例 · 不保存');
+  if (!Sync.cfg) return setSave('', '仅保存在这台设备');
+  if (!Sync.pass) return setSave('err', '同步已暂停：需要密码');
+  if (Sync.state==='err') return setSave('err', '同步失败');
+  if (Sync.last) return setSave('ok', '已同步 ' + Sync.last.toTimeString().slice(0,5));
+  setSave('', '同步中…');
+}
+function stateBody(){
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, su:S.settings.su||0 },
+           imports:S.settings.imports.slice(-200), txns:S.txns, del:S.del };
+}
+function applyState(b){
+  if (!b) return;
+  S.sources = Array.isArray(b.sources) ? b.sources : [];
+  const st = b.settings || {};
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.su = st.su || 0;
+  S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
+  S.txns = Array.isArray(b.txns) ? b.txns : [];
+  S.del = b.del || {};
+}
+function authFp(b){
+  return fnv(JSON.stringify([
+    (b.sources||[]).map(x=>[x.id, x.u||0, x.type, x.name]).sort(),
+    (b.settings||{}).su||0,
+    (b.imports||[]).map(x=>x.id).sort(),
+    (b.txns||[]).map(x=>x.i+':'+(x.u||0)).sort(),
+    Object.keys(b.del||{}).sort()
+  ]));
+}
+function bury(kind, id){ S.del[kind + ':' + id] = Date.now(); }
+function stamp(...xs){ const t = Date.now(); for (const x of xs) if (x) x.u = t; }
+function saveLocal(){
+  if (S.demo) return true;
+  try { localStorage.setItem(LS_DATA, JSON.stringify(stateBody())); return true; }
+  catch(e){ toast('这台设备的浏览器存储满了或被禁用（比如无痕模式）。设置同步，或下载一份备份。'); return false; }
+}
+function markDirty(months, settings){
+  if (S.demo) return;
+  if (settings) S.settings.su = Date.now();
+  saveLocal();
+  if (Sync.cfg && Sync.pass) { Sync.dirty = true; setSave('', '待同步…'); clearTimeout(Sync.timer); Sync.timer = setTimeout(()=>syncNow(), 2500); }
+  else pillIdle();
+}
+
+// --- merge two copies (this device vs. GitHub) ---
+function mergeState(local, remote){
+  const del = { ...(remote.del||{}) };
+  for (const [k,v] of Object.entries(local.del||{})) if (!del[k] || del[k] < v) del[k] = v;
+  const cutoff = Date.now() - 400*86400000;
+  for (const k of Object.keys(del)) if (del[k] < cutoff) delete del[k];
+  const union = (kind, a, b, idKey) => {
+    const m = new Map();
+    for (const x of a||[]) m.set(x[idKey], x);
+    for (const x of b||[]) { const o = m.get(x[idKey]); if (!o || (x.u||0) > (o.u||0)) m.set(x[idKey], x); }
+    return [...m.values()].filter(x => !(del[kind+':'+x[idKey]] && del[kind+':'+x[idKey]] >= (x.u||0)));
+  };
+  const ls = local.settings||{}, rs = remote.settings||{};
+  return {
+    v:2,
+    sources: union('s', remote.sources, local.sources, 'id'),
+    settings: (rs.su||0) > (ls.su||0) ? rs : ls,
+    imports: union('i', remote.imports, local.imports, 'id').sort((a,b)=>(a.at||'')<(b.at||'')?-1:1),
+    txns: union('t', remote.txns, local.txns, 'i'),
+    del
+  };
+}
+
+// --- encryption: PBKDF2 → AES-GCM, gzip when the browser supports it ---
+const b64 = {
+  enc(u8){ let s=''; for (let i=0;i<u8.length;i+=0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i+0x8000)); return btoa(s); },
+  dec(str){ const bin = atob(str); const u = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i); return u; }
+};
+async function gz(u8, inflate){
+  const cs = inflate ? new DecompressionStream('gzip') : new CompressionStream('gzip');
+  return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(cs)).arrayBuffer());
+}
+async function keyFor(pass, salt, it){
+  const tag = b64.enc(salt) + '|' + (it||KDF_IT) + '|' + pass;
+  if (Sync.keyCache && Sync.keyCache.tag === tag) return Sync.keyCache.key;
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations: it||KDF_IT, hash:'SHA-256' }, base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+  Sync.keyCache = { tag, key };
+  return key;
+}
+async function encryptState(state, pass){
+  if (!Sync.salt) Sync.salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await keyFor(pass, Sync.salt, KDF_IT);
+  let data = new TextEncoder().encode(JSON.stringify(state)), z = 0;
+  if (typeof CompressionStream !== 'undefined') { data = await gz(data); z = 1; }
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, data));
+  return { app:'mianmian-ledger', v:1, kdf:{ name:'PBKDF2-SHA256', it:KDF_IT, salt:b64.enc(Sync.salt) }, iv:b64.enc(iv), z, ct:b64.enc(ct) };
+}
+async function decryptState(file, pass){
+  if (!file || file.app !== 'mianmian-ledger' || !file.ct) throw { code:'badfile' };
+  const salt = b64.dec(file.kdf.salt);
+  const key = await keyFor(pass, salt, file.kdf.it);
+  let data;
+  try { data = new Uint8Array(await crypto.subtle.decrypt({ name:'AES-GCM', iv:b64.dec(file.iv) }, key, b64.dec(file.ct))); }
+  catch(e){ throw { code:'badpass' }; }
+  if (file.z) {
+    if (typeof DecompressionStream === 'undefined') throw { code:'oldbrowser' };
+    data = await gz(data, true);
+  }
+  Sync.salt = salt;
+  return JSON.parse(new TextDecoder().decode(data));
+}
+
+// --- GitHub contents API ---
+async function gh(method, url, body){
+  let r;
+  try {
+    r = await fetch('https://api.github.com' + url, { method, cache:'no-store',
+      headers: { Authorization:'Bearer ' + Sync.cfg.token, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28', ...(body?{'Content-Type':'application/json'}:{}) },
+      body: body ? JSON.stringify(body) : undefined });
+  } catch(e){ throw { code:'offline' }; }
+  if (r.status === 404) return { status:404 };
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) throw { code:'gh', status:r.status, message:j.message || r.statusText };
+  return { status:r.status, json:j };
+}
+const repoPath = () => '/repos/' + Sync.cfg.repo.split('/').map(encodeURIComponent).join('/');
+async function ghRepo(){ return gh('GET', repoPath()); }
+async function ghGet(){
+  const r = await gh('GET', repoPath() + '/contents/' + FILE);
+  if (r.status === 404) return null;
+  let content = r.json.content;
+  if (!content || r.json.encoding !== 'base64') { const bl = await gh('GET', repoPath() + '/git/blobs/' + r.json.sha); content = bl.json.content; }
+  return { sha:r.json.sha, file: JSON.parse(new TextDecoder().decode(b64.dec(content.replace(/\s/g,'')))) };
+}
+async function ghPut(file, sha){
+  const content = b64.enc(new TextEncoder().encode(JSON.stringify(file)));
+  const r = await gh('PUT', repoPath() + '/contents/' + FILE, { message:'sync ' + new Date().toISOString().slice(0,16), content, ...(sha?{sha}:{}) });
+  Sync.sha = r.json && r.json.content ? r.json.content.sha : null;
+}
+function syncErrText(e){
+  if (!e) return '未知错误';
+  if (e.code === 'badpass') return '同步密码不对，解不开 GitHub 上的数据。';
+  if (e.code === 'offline') return '连不上 GitHub，可能是网络问题。改动已存在这台设备，联网后会自动同步。';
+  if (e.code === 'oldbrowser') return '这个浏览器太旧，解不开压缩数据，请换个新一点的浏览器。';
+  if (e.code === 'badfile') return '仓库里的 ' + FILE + ' 不是这个账本的文件。';
+  if (e.code === 'notprivate') return '这个仓库是公开的。账单数据只能放进私有仓库，请在 GitHub 上把它改成 Private。';
+  if (e.code === 'norepo') return '找不到这个仓库，或者 token 没有它的权限。检查仓库名，以及 token 的 Repository access 里有没有选它。';
+  if (e.code === 'gh') {
+    if (e.status === 401) return 'token 无效或过期了，请在 GitHub 重新生成一个。';
+    if (e.status === 403) return 'token 没有写入权限。生成 token 时 Contents 要选 Read and write。';
+    return 'GitHub 返回错误 ' + e.status + '：' + (e.message||'');
+  }
+  return e.message || String(e);
+}
+async function syncNow(opts){
+  opts = opts || {};
+  if (S.demo || !Sync.cfg || !Sync.pass) { pillIdle(); return false; }
+  if (Sync.running) { Sync.again = true; return false; }
+  Sync.running = true; setSave('', '同步中…');
+  let ok = false;
+  try {
+    const remote = await ghGet();
+    Sync.sha = remote ? remote.sha : null;
+    let changed = false;
+    if (remote && !opts.force) {
+      const rs = await decryptState(remote.file, Sync.pass);
+      const before = fnv(JSON.stringify([S.sources, S.txns.length, S.settings.su]));
+      const beforeTx = new Map(S.txns.map(x=>[x.i, x.u||0]));
+      applyState(mergeState(stateBody(), rs));
+      changed = before !== fnv(JSON.stringify([S.sources, S.txns.length, S.settings.su])) || S.txns.some(x=>beforeTx.get(x.i)!==(x.u||0));
+      if (changed) analyze(S.txns, S.sources, S.settings.learned);
+      if (!Sync.dirty && authFp(stateBody()) !== authFp(rs)) Sync.dirty = true;
+    } else Sync.dirty = true;
+    if (Sync.dirty) {
+      const file = await encryptState(stateBody(), Sync.pass);
+      try { await ghPut(file, Sync.sha); }
+      catch(e){ if (e.code==='gh' && (e.status===409 || e.status===422)) { Sync.running = false; return syncNow(); } throw e; }
+      Sync.dirty = false;
+    }
+    saveLocal();
+    Sync.state = 'ok'; Sync.err = ''; Sync.last = new Date(); Sync.lastPull = Date.now(); ok = true;
+    if (changed) renderSoon();
+  } catch(e){
+    Sync.state = 'err'; Sync.err = syncErrText(e);
+    if (e && e.code === 'badpass') { Sync.pass = null; if (Sync.cfg) { delete Sync.cfg.pass; saveCfg(); } }
+    if (S.view === 'plan') renderSoon();
+  } finally {
+    Sync.running = false;
+    pillIdle();
+    if (Sync.again) { Sync.again = false; setTimeout(()=>syncNow(), 300); }
+  }
+  return ok;
+}
+function renderSoon(){
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== 'file') { a.addEventListener('blur', ()=>setTimeout(render, 50), { once:true }); return; }
+  render();
+}
+function loadCfg(){ try { Sync.cfg = JSON.parse(localStorage.getItem(LS_SYNC) || 'null'); } catch(e){ Sync.cfg = null; } Sync.pass = Sync.cfg && Sync.cfg.pass || null; }
+function saveCfg(){ try { if (Sync.cfg) localStorage.setItem(LS_SYNC, JSON.stringify(Sync.cfg)); else localStorage.removeItem(LS_SYNC); } catch(e){} }
+
+async function connectSync(repo, token, pass, remember){
+  repo = (repo||'').trim().replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { Sync.err = '仓库要写成「用户名/仓库名」'; return false; }
+  if (!token || token.length < 20) { Sync.err = '请填 GitHub token'; return false; }
+  if (!pass || pass.length < 8) { Sync.err = '同步密码至少 8 位'; return false; }
+  const prevCfg = Sync.cfg, prevPass = Sync.pass;
+  Sync.cfg = { repo, token: token.trim() }; Sync.pass = pass; Sync.salt = null; Sync.sha = null;
+  try {
+    const r = await ghRepo();
+    if (r.status === 404) throw { code:'norepo' };
+    if (!r.json.private) throw { code:'notprivate' };
+    if (r.json.permissions && r.json.permissions.push === false) throw { code:'gh', status:403 };
+    const remote = await ghGet();
+    if (remote) await decryptState(remote.file, pass);
+  } catch(e){
+    Sync.err = syncErrText(e); Sync.cfg = prevCfg; Sync.pass = prevPass; return false;
+  }
+  if (remember) Sync.cfg.pass = pass;
+  saveCfg();
+  if (S.demo) clearDemo(true);
+  const ok = await syncNow();
+  if (ok) S.month = latestMonth();
+  return ok;
+}
+function disconnectSync(){ Sync.cfg = null; Sync.pass = null; Sync.keyCache = null; Sync.salt = null; Sync.state = 'off'; Sync.err = ''; saveCfg(); pillIdle(); }
+
+async function initStore(){
+  loadCfg();
+  let had = false;
+  try { const raw = localStorage.getItem(LS_DATA); if (raw) { applyState(JSON.parse(raw)); had = true; } } catch(e){}
+  if (!had && !Sync.cfg) { loadDemo(); render(); pillIdle(); return; }
+  S.month = latestMonth(); analyze(S.txns, S.sources, S.settings.learned);
+  render(); pillIdle();
+  if (Sync.cfg && Sync.pass) { const ok = await syncNow(); if (ok) { S.month = latestMonth(); render(); } }
+}
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && Sync.cfg && Sync.pass && Date.now() - Sync.lastPull > 20000) syncNow(); });
+window.addEventListener('online', ()=>{ if (Sync.cfg && Sync.pass) syncNow(); });
+
+function latestMonth(){
+  const cur = nowYM();
+  const months = [...new Set(S.txns.map(x=>ymOf(x.d)))].sort();
+  if (!months.length) return cur;
+  if (months.includes(cur) && S.txns.filter(x=>ymOf(x.d)===cur).length >= 5) return cur;
+  return months[months.length-1] > cur ? cur : months[months.length-1];
+}
+function sig(x){ return [x.st,x.w,x.p,x.c,x.sus,x.warn].join('|'); }
+function runAnalyze(save=true){
+  analyze(S.txns, S.sources, S.settings.learned);
+  if (save) markDirty([]);
+}
+
+// ---------- demo ----------
+function loadDemo(){
+  S.demo = true;
+  S.sources = [
+    { id:'demo-card', name:'楽天カード', type:'card' },
+    { id:'demo-pay', name:'PayPay', type:'wallet' },
+    { id:'demo-bank', name:'三井住友銀行', type:'bank' },
+    { id:'demo-app', name:'记账App导出', type:'app' }
+  ];
+  const y = 2026, m = 10;
+  const D = d => y+'-'+pad(m)+'-'+pad(d);
+  const card = [[2,'AMAZON.CO.JP',3280],[3,'NETFLIX.COM',1590],[6,'PAYPAY',1200],[8,'ペットフード チャーム',4580],[10,'NTTドコモ ご利用料金',4950],[12,'ユニクロ 新宿',5990],[16,'SPOTIFY',980],[19,'APPLE COM BILL',400],[22,'スターバックス 渋谷',680],[24,'セブン－イレブン',498],[28,'東京ガス',3920]];
+  const pay = [[5,'チャージ / 三井住友銀行',20000,0],[6,'ローソン / 支払い',1200,1],[9,'まいばすけっと / 支払い',2380,1],[13,'マクドナルド / 支払い',890,1],[18,'マツモトキヨシ / 支払い',2140,1],[21,'アニメイト池袋 / 支払い',3960,1],[23,'ファミリーマート / 支払い',498,1],[26,'送った金額 / 友人',1500,1],[29,'まいばすけっと / 支払い',1870,1]];
+  const cardTotal = card.reduce((s,r)=>s+r[2],0);
+  const bank = [[1,'家賃 ミドリ不動産',78000,1],[5,'PAYPAY チャージ',20000,1],[15,'トウキヨウデンリヨク',6820,1],[18,'SBI証券 つみたて',30000,1],[20,'カード',10000,1],[25,'給与 カ）サンプル商事',268000,0],[27,'ラクテンカードサービス',cardTotal,1]];
+  const app = [[2,'アマゾン',3280,1],[6,'ローソン',1200,1],[22,'スターバックス',680,1],[13,'マクドナルド',890,1]];
+  const tx = [];
+  const add = (s, f, rows) => { const list = rows.map(r=>({ d:D(r[0]), t:r[1], a:r[2], o: r.length>3 ? r[3] : 1 })); hashList(list, s); for (const x of list) tx.push({ i:rid(), s, f, ...x }); };
+  add('demo-card','demo1',card); add('demo-pay','demo2',pay); add('demo-bank','demo3',bank); add('demo-app','demo4',app);
+  S.txns = tx;
+  S.settings = { budgets:{ food:30000, eat:12000, shop:15000, fun:10000, cat:8000, sub:6000, trans:8000, health:5000, util:12000, tel:5000 },
+    fixed:[ {id:'f1',name:'房租',amt:78000,cat:'home',kw:'家賃'}, {id:'f2',name:'电费',amt:7000,cat:'util',kw:'デンリヨク'}, {id:'f3',name:'燃气',amt:4000,cat:'util',kw:'東京ガス'}, {id:'f4',name:'手机（docomo）',amt:4950,cat:'tel',kw:'ドコモ'}, {id:'f5',name:'Netflix',amt:1590,cat:'sub',kw:'NETFLIX'}, {id:'f6',name:'Spotify',amt:980,cat:'sub',kw:'SPOTIFY'}, {id:'f7',name:'iCloud',amt:400,cat:'sub',kw:'APPLE'}, {id:'f8',name:'网络',amt:4180,cat:'tel',kw:'NURO'} ],
+    learned:{}, imports:[], su:0 };
+  S.del = {};
+  S.month = '2026-10';
+  analyze(S.txns, S.sources, S.settings.learned);
+}
+function clearDemo(){
+  S.demo = false; S.sources = []; S.txns = []; S.del = {}; S.settings = { budgets:{}, fixed:[], learned:{}, imports:[], su:0 };
+  S.month = nowYM(); S.importSrc = ''; S.pending = null; S.lastResult = null;
+  saveLocal(); pillIdle();
+}
+
+// ---------- render ----------
+function render(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===S.view));
+  $('#monthLabel').textContent = fmtMonth(S.month);
+  $('#demoBar').hidden = !S.demo;
+  const v = S.view;
+  $('#view').innerHTML = v==='txns' ? viewTxns() : v==='import' ? viewImport() : v==='plan' ? viewPlan() : viewOverview();
+  if (v==='txns') renderTxRows();
+}
+function srcName(id){ const s = S.sources.find(s=>s.id===id); return s ? s.name : '已删除来源'; }
+
+function viewOverview(){
+  const M = monthSummary(S.txns, S.month);
+  const budgets = S.settings.budgets;
+  const budgetTotal = Object.entries(budgets).filter(([k])=>k!=='save').reduce((s,[,v])=>s+(+v||0),0);
+  const budgetSpent = Object.keys(budgets).filter(k=>k!=='save').reduce((s,k)=>s+(M.byCat[k]||0),0);
+  if (!M.count) {
+    return `<div class="card"><h2>${fmtMonth(S.month)}还没有账单</h2><p class="muted small">去「上传账单」导入这个月的信用卡、银行、PayPay 明细。同一笔消费出现在多个账单里也没关系，我会自动去重。</p><button class="btn pri" data-go="import">上传账单</button></div>` + trendCard();
+  }
+  const rate = M.income > 0 ? Math.round((M.income - M.expense) / M.income * 100) : null;
+  const tiles = `
+  <div class="grid tiles">
+    <div class="card tile"><div class="lab">收入</div><div class="val num">${yen(M.income)}</div><div class="foot">不含转账、充值和退款</div></div>
+    <div class="card tile"><div class="lab">实际支出</div><div class="val num">${yen(M.expense)}</div><div class="foot">${budgetTotal?('设了预算的分类：'+yen(budgetSpent)+' / '+yen(budgetTotal)+(budgetSpent>budgetTotal?' · 超了':'')):'还没设预算'}</div></div>
+    <div class="card tile"><div class="lab">结余</div><div class="val num ${M.net>=0?'pos':'neg'}">${yen(M.net)}</div><div class="foot">${rate!==null?('结余率 '+rate+'%'):''}${M.save?(' · 另存入投资 '+yen(M.save)):''}</div></div>
+    <div class="card tile excl"><div class="lab">已排除，没算进支出</div><div class="val num">${yen(M.excludedAmt)}</div><div class="foot">重复 ${M.dup.length} 笔 · 转账/还款/充值 ${M.xfer.length} 笔</div></div>
+  </div>`;
+  const alerts = [];
+  if (!S.demo && !Sync.cfg) alerts.push(`<div class="alert info"><span>现在只保存在这台设备。想在手机和电脑上都能用，可以连上你的 GitHub 私有仓库同步。</span><button class="btn sm" data-act="goto-sync">设置同步</button></div>`);
+  if (Sync.cfg && !Sync.pass) alerts.push(`<div class="alert warn"><span>同步暂停了，需要输入同步密码。</span><button class="btn sm" data-act="goto-sync">去输入</button></div>`);
+  if (M.sus.length) { const n = M.sus.length/2|0 || 1; alerts.push(`<div class="alert warn"><span><b>${n} 组</b>金额相同、日期接近，但商户名不一样，我不确定是不是重复。目前两笔都算进支出。</span><button class="btn sm" data-filter="sus">去确认</button></div>`); }
+  const wc = M.warn.filter(x=>x.warn==='card'), ww = M.warn.filter(x=>x.warn==='wallet');
+  if (wc.length) alerts.push(`<div class="alert warn"><span>银行里有 ${wc.length} 笔信用卡还款（${yen(wc.reduce((s,x)=>s+x.a,0))}），但还没导入那张卡的明细。导入后这笔会自动改成「还款」，不再重复计算。</span><button class="btn sm" data-go="import">导入卡账单</button></div>`);
+  if (ww.length) alerts.push(`<div class="alert warn"><span>有 ${ww.length} 笔钱包充值（${yen(ww.reduce((s,x)=>s+x.a,0))}）还看不到去向。导入对应钱包（如 PayPay）的明细，就能换成真实的消费记录。</span><button class="btn sm" data-go="import">导入钱包账单</button></div>`);
+  const uncategorized = S.txns.filter(x=>ymOf(x.d)===S.month && x.st==='ok' && x.o && x.c==='other' && !x.mc);
+  if (uncategorized.length >= 3) alerts.push(`<div class="alert info"><span>${uncategorized.length} 笔支出还在「其他」里。改一次分类，同名商户以后都会自动归好。</span><button class="btn sm" data-filter="other">去分类</button></div>`);
+
+  // category bars
+  const cats = EXP_CATS.filter(([k])=>k!=='save').map(([k,n])=>({k,n,spent:M.byCat[k]||0,budget:+budgets[k]||0})).filter(c=>c.spent||c.budget).sort((a,b)=>b.spent-a.spent);
+  const maxSpent = Math.max(1, ...cats.map(c=>Math.max(c.spent,c.budget)));
+  const bars = cats.map(c=>{
+    let pct, cls, row2;
+    if (c.budget){ pct = Math.min(100, c.spent/c.budget*100); const r = c.spent/c.budget; cls = r>1?'bad':r>0.8?'warn':'good'; row2 = r>1 ? `超出预算 ${yen(c.spent-c.budget)}` : `还剩 ${yen(c.budget-c.spent)}`; }
+    else { pct = c.spent/maxSpent*100; cls=''; row2 = '没设预算'; }
+    return `<div class="bar"><div class="row1"><span>${esc(c.n)}</span><span class="amt num">${yen(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div></div>`;
+  }).join('') || '<div class="empty">这个月还没有计入的支出</div>';
+  const refundLine = M.refund ? `<p class="small muted" style="margin:10px 0 0">已扣除退款 ${yen(M.refund)}</p>` : '';
+
+  // fixed
+  const fs = fixedStatus(S.settings.fixed, S.txns, S.month);
+  const fixedTotal = S.settings.fixed.reduce((s,f)=>s+(+f.amt||0),0);
+  const fixedHtml = fs.length ? fs.map(({f,hit})=>`<div class="li"><span>${esc(f.name)} <span class="muted num small">${yen(f.amt||0)}</span></span>${hit?`<span class="pill ok">已扣 ${hit.d.slice(5).replace('-','/')} · <span class="num">${yen(hit.a)}</span></span>`:`<span class="pill none">本月没看到</span>`}</div>`).join('')
+    : `<div class="empty">还没登记固定支出。<br><button class="btn sm" data-go="plan" style="margin-top:8px">去登记</button></div>`;
+
+  return tiles + `<div class="alerts">${alerts.join('')}</div>` + `
+  <div class="grid two">
+    <div class="card"><h2>支出分类与预算</h2><p class="h2sub">カテゴリ別（べつ）の支出（ししゅつ）と予算（よさん）</p><div class="bars">${bars}</div>${refundLine}</div>
+    <div class="grid" style="align-content:start">
+      <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div></div>
+      ${reconCard()}
+    </div>
+  </div>` + trendCard();
+}
+function reconCard(){
+  const pays = S.txns.filter(x=>ymOf(x.d)===S.month && x.o && (x.c==='card' || (x.st==='xfer' && /信用卡还款/.test(x.w||''))));
+  if (!pays.length) return '';
+  const cards = S.sources.filter(s=>s.type==='card');
+  const totals = [];
+  for (const c of cards){
+    const byM = {};
+    for (const x of S.txns) if (x.s===c.id) { const k = ymOf(x.d); byM[k] = (byM[k]||0) + (x.o ? x.a : -x.a); }
+    for (const [ym,v] of Object.entries(byM)) totals.push({ name:c.name, ym, v });
+  }
+  const rows = pays.map(p=>{
+    const near = totals.filter(t=>t.ym<=ymOf(p.d) && t.ym>=shiftMonth(ymOf(p.d),-2)).sort((a,b)=>Math.abs(a.v-p.a)-Math.abs(b.v-p.a))[0];
+    let right;
+    if (!near) right = '<span class="pill none">没有可对照的卡账单</span>';
+    else { const diff = p.a - near.v; right = Math.abs(diff) < 1 ? `<span class="pill ok">对上了 · ${esc(near.name)} ${(+near.ym.slice(5))}月</span>` : `<span class="pill sus">${esc(near.name)} ${(+near.ym.slice(5))}月合计 ${yen(near.v)}，差 ${yen(diff)}</span>`; }
+    return `<div class="li"><span><span class="num">${p.d.slice(5).replace('-','/')}</span> ${esc(p.t)} <b class="num">${yen(p.a)}</b></span>${right}</div>`;
+  }).join('');
+  return `<div class="card"><h2>信用卡还款核对</h2><p class="h2sub">银行扣款 ↔ 卡账单合计。卡公司按结账日算周期，差一点通常是跨月的几笔。</p><div class="list">${rows}</div></div>`;
+}
+function trendCard(){
+  const months = []; for (let k=5;k>=0;k--) months.push(shiftMonth(S.month,-k));
+  const data = months.map(ym=>{ const M = monthSummary(S.txns, ym); return { ym, inc:M.income, exp:M.expense, n:M.count }; });
+  if (data.filter(d=>d.n).length < 1) return '';
+  const max = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
+  const step = niceStep(max/3), top = Math.ceil(max/step)*step;
+  const W=900, H=210, padL=56, padB=26, padT=10, cw=(W-padL-8)/data.length, bw=Math.min(22,cw/3);
+  const yv = v => padT + (H-padT-padB) * (1 - v/top);
+  let g = '';
+  for (let v=0; v<=top+1; v+=step){ g += `<line x1="${padL}" x2="${W-4}" y1="${yv(v)}" y2="${yv(v)}" stroke="var(--line)" stroke-width="1"/><text x="${padL-6}" y="${yv(v)+4}" text-anchor="end">${v>=10000?(v/10000)+'万':v}</text>`; }
+  data.forEach((d,i)=>{
+    const cx = padL + cw*i + cw/2;
+    const on = d.ym===S.month;
+    if (d.n){
+      g += `<rect x="${cx-bw-2}" y="${yv(d.inc)}" width="${bw}" height="${Math.max(0,yv(0)-yv(d.inc))}" rx="3" fill="var(--good)" opacity="${on?1:.55}"><title>${fmtMonth(d.ym)} 收入 ${yen(d.inc)}</title></rect>`;
+      g += `<rect x="${cx+2}" y="${yv(d.exp)}" width="${bw}" height="${Math.max(0,yv(0)-yv(d.exp))}" rx="3" fill="var(--accent)" opacity="${on?1:.55}"><title>${fmtMonth(d.ym)} 支出 ${yen(d.exp)}</title></rect>`;
+    }
+    g += `<text x="${cx}" y="${H-8}" text-anchor="middle" ${on?'style="fill:var(--ink);font-weight:700"':''}>${+d.ym.slice(5)}月</text>`;
+  });
+  return `<div class="card" style="margin-top:14px"><h2>近 6 个月</h2><p class="h2sub">收入和实际支出（已去重、去转账）</p><svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="近6个月收入与支出">${g}</svg><div class="legend"><span><i style="background:var(--good)"></i>收入</span><span><i style="background:var(--accent)"></i>实际支出</span></div></div>`;
+}
+function niceStep(x){ const p = Math.pow(10, Math.floor(Math.log10(Math.max(1,x)))); const f = x/p; return (f<=1?1:f<=2?2:f<=5?5:10)*p; }
+
+// ---------- transactions ----------
+function viewTxns(){
+  const L = S.txns.filter(x=>ymOf(x.d)===S.month);
+  const cnt = { all:L.length, ok:L.filter(x=>x.st==='ok').length, dup:L.filter(x=>x.st==='dup').length, xfer:L.filter(x=>x.st==='xfer').length, sus:L.filter(x=>x.sus&&x.st==='ok').length, other:L.filter(x=>x.st==='ok'&&x.o&&x.c==='other').length };
+  const chip = (k,label) => `<button class="chip ${S.filter===k?'on':''}" data-filter="${k}">${label} <span class="num">${cnt[k]}</span></button>`;
+  const srcOpts = `<option value="">全部来源</option>` + S.sources.map(s=>`<option value="${esc(s.id)}" ${S.srcFilter===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  return `<div class="toolbar">${chip('all','全部')}${chip('ok','计入')}${chip('dup','重复')}${chip('xfer','转账/还款')}${chip('sus','待确认')}${chip('other','未分类')}
+    <input type="search" id="q" placeholder="搜索商户或备注" value="${esc(S.q)}" aria-label="搜索">
+    <select id="srcFilter" aria-label="来源">${srcOpts}</select></div>
+    <div class="tablewrap"><table><thead><tr><th>日期</th><th>内容</th><th>来源</th><th>分类</th><th class="r">金额</th><th class="r">状态</th></tr></thead><tbody id="txBody"></tbody></table></div>
+    <p class="small muted">改分类后，同名商户以后会自动用这个分类。标成「重复」或「转账」的不算进支出。</p>`;
+}
+function renderTxRows(){
+  const body = $('#txBody'); if (!body) return;
+  const q = norm(S.q);
+  let L = S.txns.filter(x=>ymOf(x.d)===S.month);
+  if (S.filter==='ok') L = L.filter(x=>x.st==='ok');
+  else if (S.filter==='dup') L = L.filter(x=>x.st==='dup');
+  else if (S.filter==='xfer') L = L.filter(x=>x.st==='xfer');
+  else if (S.filter==='sus') L = L.filter(x=>x.sus && x.st==='ok');
+  else if (S.filter==='other') L = L.filter(x=>x.st==='ok' && x.o && x.c==='other');
+  if (S.srcFilter) L = L.filter(x=>x.s===S.srcFilter);
+  if (q) L = L.filter(x=>norm(x.t).includes(q) || norm(srcName(x.s)).includes(q));
+  L.sort((a,b)=> a.d===b.d ? (a.a-b.a) : (a.d<b.d?1:-1));
+  if (S.filter==='sus') L.sort((a,b)=> (a.a-b.a) || (a.d<b.d?-1:1));
+  const byId = Object.fromEntries(S.txns.map(x=>[x.i,x]));
+  const html = L.slice(0,800).map(x=>{
+    const cats = x.o ? EXP_CATS : INC_CATS;
+    const opts = cats.map(([k,n])=>`<option value="${k}" ${x.c===k?'selected':''}>${esc(n)}</option>`).join('');
+    let pill, acts = '';
+    if (x.st==='dup') { pill = '<span class="pill dup">重复</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">其实不重复</button>`; }
+    else if (x.st==='xfer') { pill = '<span class="pill xfer">转账</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">算作收支</button>`; }
+    else if (x.sus) { const o = byId[x.sus]; pill = '<span class="pill sus">待确认</span>'; acts = `<button class="btn sm" data-act="sus-yes" data-id="${x.i}">是重复，删这条</button><button class="btn sm" data-act="sus-no" data-id="${x.i}">不是重复</button>`; if (o) x._sw = `可能和「${srcName(o.s)}」${o.d.slice(5).replace('-','/')}「${o.t}」是同一笔`; }
+    else { pill = x.m ? '<span class="pill ok">计入·已确认</span>' : '<span class="pill ok">计入</span>'; acts = `<button class="btn sm" data-act="set-dup" data-id="${x.i}">标为重复</button><button class="btn sm" data-act="set-xfer" data-id="${x.i}">标为转账</button>`; }
+    const why = x.sus && x._sw ? x._sw : x.w;
+    const exc = x.st!=='ok';
+    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`<select data-cat="${x.i}" aria-label="分类">${opts}</select>`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${yen(x.a).replace('¥','¥')}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
+  }).join('');
+  body.innerHTML = html || `<tr><td colspan="6" class="empty">没有符合条件的记录</td></tr>`;
+}
+
+// ---------- import ----------
+function viewImport(){
+  const srcOpts = S.sources.map(s=>`<option value="${esc(s.id)}" ${S.importSrc===s.id?'selected':''}>${esc(s.name)}（${esc(SRC_TYPE_NAME[s.type]||s.type)}）</option>`).join('');
+  const isNew = !S.importSrc || S.importSrc==='new';
+  const typeOpts = SRC_TYPES.map(([k,n])=>`<option value="${k}" ${S.newSrc.type===k?'selected':''}>${n}</option>`).join('');
+  let pending = '';
+  const P = S.pending;
+  if (P) pending = csvPreview(P);
+  const res = S.lastResult ? `<div class="card"><h2>导入完成：${esc(S.lastResult.file)}</h2><div class="kv" style="margin-top:8px">
+      <span>读到 <b class="num">${S.lastResult.read}</b> 笔</span><span>新增 <b class="num">${S.lastResult.added}</b></span>
+      <span>之前导入过，已跳过 <b class="num">${S.lastResult.skipped}</b></span><span>判定为重复 <b class="num">${S.lastResult.dup}</b></span>
+      <span>转账/还款/充值 <b class="num">${S.lastResult.xfer}</b></span><span>待你确认 <b class="num">${S.lastResult.sus}</b></span></div>
+      <div class="toolbar" style="margin:12px 0 0"><button class="btn pri" data-go="overview">看本月概览</button><button class="btn" data-go="txns">看明细</button></div></div>` : '';
+  const hist = S.settings.imports.slice().reverse().slice(0,12).map(im=>`<div class="li"><span><span class="num small muted">${esc((im.at||'').slice(0,10))}</span> ${esc(im.file)} <span class="muted small">→ ${esc(srcName(im.src))}</span></span><span class="acts"><span class="small muted">新增 ${im.added}</span><button class="btn sm danger" data-act="undo-import" data-id="${esc(im.id)}">撤销这次导入</button></span></div>`).join('');
+  return `<div class="steps">
+    <div class="card"><h2>① 这份账单来自哪里？</h2><p class="h2sub">同一个来源（比如楽天カード）以后每月都选它，重复上传也会自动跳过。</p>
+      <div class="fields">
+        <label class="field">来源<select id="importSrc"><option value="new" ${isNew?'selected':''}>＋ 新建来源</option>${srcOpts}</select></label>
+        ${isNew?`<label class="field">名称<input type="text" id="newSrcName" placeholder="例：楽天カード / PayPay / ゆうちょ" value="${esc(S.newSrc.name)}"></label>
+        <label class="field">类型<select id="newSrcType">${typeOpts}</select></label>`:''}
+      </div></div>
+    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 都能导出 CSV。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
+      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,text/csv" multiple>
+        <div><div class="big">点这里选文件，或拖进来</div><div class="small">CSV 文件（UTF-8 / Shift_JIS 都行）</div></div></label>
+    </div>
+    ${pending}${res}
+    ${hist?`<div class="card"><h2>导入记录</h2><p class="h2sub">传错了可以整批撤销</p><div class="list">${hist}</div></div>`:''}
+  </div>`;
+}
+function csvPreview(P){
+  const L = P.layout;
+  const colOpts = (sel, allowNone) => (allowNone?`<option value="-1">（不用）</option>`:'') + L.cols.map((c,i)=>`<option value="${i}" ${sel===i?'selected':''}>${esc(c)}</option>`).join('');
+  const two = L.outCol>=0 && L.inCol>=0;
+  const parsed = P.parsed || [];
+  const rows = parsed.slice(0,8).map(x=>`<tr><td class="num">${x.d}</td><td>${esc(x.t)}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${yen(x.a)}</td></tr>`).join('');
+  const outSum = parsed.filter(x=>x.o).reduce((s,x)=>s+x.a,0), inSum = parsed.filter(x=>!x.o).reduce((s,x)=>s+x.a,0);
+  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}</h2><p class="h2sub">${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
+    <div class="fields">
+      <label class="field">日期列<select data-map="dateCol">${colOpts(L.dateCol)}</select></label>
+      <label class="field">内容列<select data-map="desc0">${colOpts(L.descCols[0]??-1,true)}</select></label>
+      <label class="field">补充内容列<select data-map="desc1">${colOpts(L.descCols[1]??-1,true)}</select></label>
+      <label class="field">金额方式<select data-map="mode"><option value="one" ${two?'':'selected'}>一列金额</option><option value="two" ${two?'selected':''}>支出、收入分两列</option></select></label>
+      ${two?`<label class="field">支出列<select data-map="outCol">${colOpts(L.outCol)}</select></label><label class="field">收入列<select data-map="inCol">${colOpts(L.inCol)}</select></label>`
+           :`<label class="field">金额列<select data-map="amtCol">${colOpts(L.amtCol)}</select></label>`}
+      <label class="field" style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="flip" ${P.flip?'checked':''}> 收支方向反了</label>
+    </div>
+    <div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>日期</th><th>内容</th><th class="r">金额</th></tr></thead><tbody>${rows || '<tr><td colspan="3" class="empty">没识别出交易，换一下上面的列试试</td></tr>'}</tbody></table></div>
+    <div class="toolbar" style="margin:12px 0 0;justify-content:space-between">
+      <span class="small muted">共 <b class="num">${parsed.length}</b> 笔 · 支出 <span class="num">${yen(outSum)}</span> · 收入 <span class="num">${yen(inSum)}</span>${P.skipped?` · 跳过 ${P.skipped} 行（表头、合计等）`:''}</span>
+      <span class="acts"><button class="btn" data-act="cancel-pending">取消</button><button class="btn pri" data-act="confirm-import" ${parsed.length?'':'disabled'}>导入这 ${parsed.length} 笔</button></span>
+    </div></div>`;
+}
+function guessSource(name, head){
+  const n = norm(name + ' ' + (head||'').slice(0,400));
+  const G = [[/PAYPAYカード|PAYPAYCARD/,'PayPayカード','card'],[/楽天カード|ENAVI|RAKUTENCARD/,'楽天カード','card'],[/三井住友カード|VPASS|SMBCCARD/,'三井住友カード','card'],[/JCB/,'JCBカード','card'],[/イオンカード|AEONCARD/,'イオンカード','card'],[/エポス|EPOS/,'エポスカード','card'],[/セゾン|SAISON/,'セゾンカード','card'],[/PAYPAY/,'PayPay','wallet'],[/SUICA/,'Suica','wallet'],[/楽天銀行/,'楽天銀行','bank'],[/三井住友銀行|SMBC/,'三井住友銀行','bank'],[/三菱UFJ|MUFG/,'三菱UFJ銀行','bank'],[/みずほ|MIZUHO/,'みずほ銀行','bank'],[/ゆうちょ|JAPANPOST|JPBANK/,'ゆうちょ銀行','bank'],[/住信SBI|NEOBANK/,'住信SBIネット銀行','bank'],[/MONEYFORWARD|マネーフォワード|ZAIM|MONEYTREE/,'记账App导出','app']];
+  for (const [re,nm,type] of G) if (re.test(n)) return { name:nm, type };
+  return null;
+}
+function currentSrcType(){
+  if (S.importSrc && S.importSrc!=='new') { const s = S.sources.find(s=>s.id===S.importSrc); return s ? s.type : 'other'; }
+  return S.newSrc.type;
+}
+async function handleFiles(files){
+  const f = files[0]; if (!f) return;
+  if (files.length > 1) toast('一次处理一个文件，先导入「' + f.name + '」。');
+  S.lastResult = null;
+  const lower = f.name.toLowerCase();
+  const isCsv = /\.(csv|tsv|txt)$/.test(lower) || f.type === 'text/csv';
+  let head = '';
+  if (isCsv) {
+    const text = decodeBuffer(await f.arrayBuffer());
+    head = text;
+    const rows = parseCSV(text);
+    const layout = detectLayout(rows);
+    autoPickSource(f.name, head);
+    let L = layout, guessed = true;
+    if (!L) { guessed = false; const w = Math.max(1, ...rows.slice(0,30).map(r=>r.length)); L = { headerRow:0, cols:(rows[0]||[]).concat(Array(w).fill('')).slice(0,w).map((h,i)=>h||('列'+(i+1))), dateCol:0, descCols: w>1?[1]:[], amtCol: Math.min(2,w-1), outCol:-1, inCol:-1 }; }
+    S.pending = { kind:'csv', file:f.name, rows, layout:L, flip:false, guessed };
+    reparse();
+  } else {
+    toast('这里只读 CSV，账单在你自己的浏览器里处理，不经过任何人。PDF 或截图请回到网银或 App，改选「CSV 下载」。');
+    return;
+  }
+  render();
+  const el = document.querySelector('.steps .card:nth-child(3)'); if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
+function autoPickSource(fileName, head){
+  if (S.importSrc && S.importSrc!=='new') return;
+  const g = guessSource(fileName, head); if (!g) return;
+  const ex = S.sources.find(s=>norm(s.name)===norm(g.name));
+  if (ex) S.importSrc = ex.id; else { S.importSrc = 'new'; if (!S.newSrc.name) S.newSrc = { name:g.name, type:g.type }; }
+}
+function reparse(){
+  const P = S.pending; if (!P || P.kind!=='csv') return;
+  const r = rowsToTxns(P.rows, P.layout, currentSrcType(), P.flip);
+  P.parsed = r.list; P.skipped = r.skipped;
+}
+function ensureSource(){
+  if (S.importSrc && S.importSrc!=='new') return S.sources.find(s=>s.id===S.importSrc);
+  const name = (S.newSrc.name||'').trim();
+  if (!name) { toast('先给这个来源起个名字，比如「楽天カード」。'); const el = $('#newSrcName'); if (el) el.focus(); return null; }
+  const ex = S.sources.find(s=>norm(s.name)===norm(name));
+  if (ex) { S.importSrc = ex.id; return ex; }
+  const s = { id: 's'+rid(), name, type: S.newSrc.type, u: Date.now() };
+  S.sources.push(s); S.importSrc = s.id; S.newSrc = { name:'', type:'card' };
+  return s;
+}
+function confirmImport(){
+  const P = S.pending; if (!P || !P.parsed || !P.parsed.length) return;
+  if ((!S.importSrc || S.importSrc==='new') && !(S.newSrc.name||'').trim()) { toast('先给这个来源起个名字，比如「楽天カード」。'); const el = $('#newSrcName'); if (el) el.focus(); return; }
+  if (S.demo) { const keepSrc = S.importSrc, keepNew = { ...S.newSrc }, keepP = S.pending; clearDemo(); S.importSrc = keepSrc.startsWith('demo-') ? 'new' : keepSrc; S.newSrc = keepNew; S.pending = keepP;
+    if (keepSrc.startsWith('demo-')) { const d = { 'demo-card':['楽天カード','card'], 'demo-pay':['PayPay','wallet'], 'demo-bank':['三井住友銀行','bank'], 'demo-app':['记账App导出','app'] }[keepSrc]; if (d) S.newSrc = { name:d[0], type:d[1] }; } }
+  const src = ensureSource(); if (!src) return;
+  const list = hashList(P.parsed.map(x=>({...x})), src.id);
+  const have = new Set(S.txns.filter(x=>x.s===src.id).map(x=>x.h));
+  const impId = 'i'+rid();
+  const fresh = [];
+  const now = Date.now();
+  for (const x of list) if (!have.has(x.h)) fresh.push({ i:rid(), s:src.id, f:impId, u:now, ...x });
+  S.txns.push(...fresh);
+  analyze(S.txns, S.sources, S.settings.learned);
+  const freshIds = new Set(fresh.map(x=>x.i));
+  const F = S.txns.filter(x=>freshIds.has(x.i));
+  S.lastResult = { file:P.file, read:list.length, added:fresh.length, skipped:list.length-fresh.length, dup:F.filter(x=>x.st==='dup').length, xfer:F.filter(x=>x.st==='xfer').length, sus:F.filter(x=>x.sus).length };
+  S.settings.imports.push({ id:impId, src:src.id, file:P.file, at:new Date().toISOString(), added:fresh.length, u:now });
+  S.pending = null;
+  if (fresh.length) {
+    const months = [...new Set(F.map(x=>ymOf(x.d)))].sort();
+    if (!months.includes(S.month)) S.month = months[months.length-1];
+  }
+  markDirty(new Set(S.txns.map(x=>ymOf(x.d))), true);
+  render();
+}
+function undoImport(id){
+  const months = new Set(S.txns.filter(x=>x.f===id).map(x=>ymOf(x.d)));
+  for (const x of S.txns) if (x.f===id) bury('t', x.i);
+  bury('i', id);
+  S.txns = S.txns.filter(x=>x.f!==id);
+  S.settings.imports = S.settings.imports.filter(im=>im.id!==id);
+  analyze(S.txns, S.sources, S.settings.learned);
+  markDirty([]);
+  toast('已撤销这次导入'); render();
+}
+
+// ---------- plan ----------
+function viewPlan(){
+  const catOpts = sel => EXP_CATS.filter(([k])=>!['card','wallet','cash'].includes(k)).map(([k,n])=>`<option value="${k}" ${sel===k?'selected':''}>${esc(n)}</option>`).join('');
+  const fixed = S.settings.fixed.map(f=>`<div class="planrow">
+      <input type="text" data-fx="${esc(f.id)}" data-k="name" value="${esc(f.name)}" placeholder="名称" aria-label="名称">
+      <input type="number" data-fx="${esc(f.id)}" data-k="amt" value="${f.amt||''}" placeholder="金额" aria-label="金额" min="0">
+      <select data-fx="${esc(f.id)}" data-k="cat" aria-label="分类">${catOpts(f.cat)}</select>
+      <input type="text" data-fx="${esc(f.id)}" data-k="kw" value="${esc(f.kw||'')}" placeholder="账单里的关键词" aria-label="关键词">
+      <button class="iconbtn x" data-act="del-fixed" data-id="${esc(f.id)}" aria-label="删除">×</button></div>`).join('');
+  const fixedTotal = S.settings.fixed.reduce((s,f)=>s+(+f.amt||0),0);
+  const months3 = [1,2,3].map(k=>shiftMonth(S.month,-k+1)).map(ym=>monthSummary(S.txns,ym)).filter(m=>m.count);
+  const avgInc = months3.length ? months3.reduce((s,m)=>s+m.income,0)/months3.length : 0;
+  const budgetTotal = Object.entries(S.settings.budgets).filter(([k])=>k!=='save').reduce((s,[,v])=>s+(+v||0),0);
+  const fixedOutside = S.settings.fixed.filter(f=>!(+S.settings.budgets[f.cat])).reduce((s,f)=>s+(+f.amt||0),0);
+  const planned = budgetTotal + fixedOutside;
+  const budgets = EXP_CATS.filter(([k])=>!['card','wallet','cash'].includes(k)).map(([k,n])=>`<label>${esc(n)}<input type="number" min="0" step="1000" data-budget="${k}" value="${S.settings.budgets[k]||''}" placeholder="—"></label>`).join('');
+  const sources = S.sources.map(s=>{ const n = S.txns.filter(x=>x.s===s.id).length; return `<div class="li"><span>${esc(s.name)} <span class="muted small">${n} 笔</span></span><span class="acts"><select data-srctype="${esc(s.id)}" aria-label="类型">${SRC_TYPES.map(([k,nm])=>`<option value="${k}" ${s.type===k?'selected':''}>${nm}</option>`).join('')}</select><button class="btn sm danger" data-act="del-src" data-id="${esc(s.id)}">删除来源和它的记录</button></span></div>`; }).join('') || '<div class="empty">还没有来源，导入账单时会自动建立</div>';
+  return `<div class="steps">
+    ${syncCard()}
+    <div class="card"><h2>固定支出</h2><p class="h2sub">房租、水电、手机、订阅这类每月都有的。「关键词」写账单里会出现的字，比如 家賃、ドコモ、NETFLIX，我每月帮你核对有没有扣。</p>
+      ${fixed}<div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fixed">＋ 加一项</button><span class="small">每月固定 <b class="num">${yen(fixedTotal)}</b>${avgInc?` · 约占收入 ${Math.round(fixedTotal/avgInc*100)}%`:''}</span></div></div>
+    <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。</p>
+      <div class="budgetgrid">${budgets}</div>
+      <p class="small" style="margin:12px 0 0">预算合计 <b class="num">${yen(budgetTotal)}</b>${avgInc?`。加上没设预算分类里的固定支出，每月计划花 <b class="num">${yen(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${yen(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${yen(avgInc-planned)}</b>`:''}</p></div>
+    <div class="card"><h2>账单来源</h2><p class="h2sub">类型会影响查重和转账判断：银行里的「カード会社」扣款、给 PayPay 的充值，只有知道哪些是卡、哪些是钱包才能排除。</p><div class="list">${sources}</div></div>
+    <div class="card"><h2>备份</h2><p class="h2sub">下载的备份文件是没加密的 JSON，请存在安全的地方。</p>
+      <div class="toolbar"><button class="btn" data-act="dl-backup">下载备份</button><button class="btn" data-act="pick-restore">从备份文件恢复</button><input type="file" id="restoreFile" accept=".json,application/json" hidden><button class="btn" data-act="dl-csv">下载本月明细（CSV）</button><button class="btn danger" data-act="wipe">清空全部数据</button></div></div>
+  </div>`;
+}
+
+
+function syncCard(){
+  const err = Sync.err ? `<div class="alert warn" style="margin:0 0 12px"><span>${esc(Sync.err)}</span></div>` : '';
+  const lock = `<p class="small muted" style="margin:10px 0 0">账单在你的设备上用同步密码加密后才上传，GitHub 上只有一串乱码。token 和密码只存在这台设备的浏览器里，不会发给任何其他地方。</p>`;
+  if (Sync.cfg && !Sync.pass) {
+    return `<div class="card" id="sync"><h2>同步 · 需要密码</h2><p class="h2sub">已连接 ${esc(Sync.cfg.repo)}。输入同步密码就能继续同步。</p>${err}
+      <div class="fields"><label class="field">同步密码<input type="password" id="syncPassOnly" autocomplete="current-password"></label>
+      <label class="field" style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="syncRememberOnly" checked> 在这台设备记住</label>
+      <button class="btn pri" data-act="sync-unlock">解锁并同步</button><button class="btn" data-act="sync-off">停止同步</button></div>${lock}</div>`;
+  }
+  if (Sync.cfg) {
+    return `<div class="card" id="sync"><h2>同步</h2><p class="h2sub">这台设备的改动会自动加密上传到 <b>${esc(Sync.cfg.repo)}</b>，打开页面时会拉取其他设备的更新。</p>${err}
+      <div class="kv"><span>状态 <b>${Sync.state==='err'?'出错':Sync.last?'正常':'等待中'}</b></span><span>上次同步 <b class="num">${Sync.last?Sync.last.toLocaleString('zh-CN',{hour12:false}):'—'}</b></span><span>密码 <b>${Sync.cfg.pass?'已在这台设备记住':'只在本次打开时记住'}</b></span></div>
+      <div class="toolbar" style="margin:12px 0 0"><button class="btn pri" data-act="sync-now">立即同步</button><button class="btn" data-act="sync-off">这台设备停止同步</button></div>${lock}</div>`;
+  }
+  const host = location.hostname.endsWith('.github.io') ? location.hostname.split('.')[0] : '';
+  return `<div class="card" id="sync"><h2>多设备同步（可选）</h2><p class="h2sub">现在数据只存在这台设备的浏览器里。连上你自己的 GitHub 私有仓库后，手机和电脑都能打开、都能更新。</p>${err}
+    <div class="fields">
+      <label class="field">数据仓库（私有）<input type="text" id="syncRepo" value="${esc(host?host+'/mianmian-ledger-data':'')}" placeholder="用户名/mianmian-ledger-data" autocomplete="off"></label>
+      <label class="field">GitHub token<input type="password" id="syncToken" placeholder="github_pat_…" autocomplete="off"></label>
+      <label class="field">同步密码（至少 8 位）<input type="password" id="syncPass" autocomplete="new-password"></label>
+      <label class="field">再输一次<input type="password" id="syncPass2" autocomplete="new-password"></label>
+      <label class="field" style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="syncRemember" checked> 在这台设备记住密码</label>
+      <button class="btn pri" data-act="sync-connect">连接并同步</button>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">token 在 GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens 生成：Repository access 选 Only select repositories，只勾这个数据仓库，Permissions 里 Contents 选 Read and write。同步密码第一次设置后，每台设备都用同一个；忘了就解不开 GitHub 上的数据，只能靠设备上的数据重新上传。</p>${lock}</div>`;
+}
+
+// ---------- events ----------
+let toastT = null;
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(()=>t.hidden=true, 4200); }
+function go(v){ S.view = v; if (location.hash !== '#'+v) { try { history.replaceState(null,'','#'+v); } catch(e){ location.hash = v; } } render(); window.scrollTo({top:0}); }
+const armed = {};
+function arm(btn, key, label){ if (armed[key] && Date.now()-armed[key] < 4000) { delete armed[key]; return true; } armed[key] = Date.now(); const old = btn.textContent; btn.textContent = label; setTimeout(()=>{ if (btn.isConnected) btn.textContent = old; }, 4000); return false; }
+
+document.addEventListener('click', e=>{
+  const tab = e.target.closest('.tab'); if (tab) { go(tab.dataset.v); return; }
+  const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
+  const fl = e.target.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; if (S.view!=='txns') go('txns'); else render(); return; }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  const x = id ? S.txns.find(t=>t.i===id) : null;
+  const touch = list => { stamp(...list.filter(Boolean)); markDirty([]); };
+  switch(act){
+    case 'clear-demo': clearDemo(); render(); break;
+    case 'set-ok': if (x){ const p = S.txns.find(t=>t.i===x.p); x.m=1; x.st='ok'; x.w='你确认过：计入'; delete x.p; if (p && p.st==='xfer' && p.p===x.i){ p.m=1; p.st='ok'; p.w='你确认过：计入'; delete p.p; } runAnalyze(); touch([x,p]); renderTxRows(); } break;
+    case 'set-dup': if (x){ x.m=1; x.st='dup'; x.w='你标记为重复'; runAnalyze(); touch([x]); renderTxRows(); } break;
+    case 'set-xfer': if (x){ x.m=1; x.st='xfer'; x.w='你标记为转账/还款'; runAnalyze(); touch([x]); renderTxRows(); } break;
+    case 'sus-yes': if (x){ const o = S.txns.find(t=>t.i===x.sus); x.m=1; x.st='dup'; x.p = o?o.i:undefined; x.w='你确认是重复'; if (o){ o.m=1; o.st='ok'; o.w='你确认过：计入'; } runAnalyze(); touch([x,o]); renderTxRows(); } break;
+    case 'sus-no': if (x){ const o = S.txns.find(t=>t.i===x.sus); x.m=1; x.st='ok'; x.w='你确认过：不是重复'; if (o){ o.m=1; o.st='ok'; o.w='你确认过：不是重复'; } runAnalyze(); touch([x,o]); renderTxRows(); } break;
+    case 'cancel-pending': S.pending = null; render(); break;
+    case 'confirm-import': confirmImport(); break;
+    case 'undo-import': if (arm(b,'undo'+id,'再点一次确认撤销')) undoImport(id); break;
+    case 'add-fixed': S.settings.fixed.push({ id:'f'+rid(), name:'', amt:0, cat:'sub', kw:'' }); markDirty([], true); render(); break;
+    case 'del-fixed': S.settings.fixed = S.settings.fixed.filter(f=>f.id!==id); markDirty([], true); render(); break;
+    case 'del-src': if (arm(b,'src'+id,'再点一次：删除来源和全部记录')) { const ms = new Set(S.txns.filter(t=>t.s===id).map(t=>ymOf(t.d))); bury('s', id); for (const t of S.txns) if (t.s===id) bury('t', t.i); S.sources = S.sources.filter(s=>s.id!==id); S.txns = S.txns.filter(t=>t.s!==id); if (S.importSrc===id) S.importSrc=''; runAnalyze(false); markDirty(new Set([...ms, ...S.txns.map(t=>ymOf(t.d))]), true); render(); } break;
+    case 'dl-backup': download('面面家計簿-备份-' + todayStr() + '.json', JSON.stringify({ app:'mianmian-ledger-backup', v:2, ...stateBody() }), 'application/json'); toast('备份文件没加密，请放在安全的地方'); break;
+    case 'dl-csv': { const L = S.txns.filter(t=>ymOf(t.d)===S.month).sort((a,b)=>a.d<b.d?-1:1); const q = s=>'"'+String(s).replace(/"/g,'""')+'"'; const csv = '\uFEFF' + ['日期,内容,来源,分类,收支,金额,状态'].concat(L.map(t=>[t.d,q(t.t),q(srcName(t.s)),q(CAT_NAME[t.c]||''),t.o?'支出':'收入',t.a,{ok:'计入',dup:'重复',xfer:'转账'}[t.st]].join(','))).join('\n'); download('面面家計簿-' + S.month + '.csv', csv, 'text/csv'); break; }
+    case 'pick-restore': $('#restoreFile').click(); break;
+    case 'sync-connect': doConnect(b); break;
+    case 'sync-now': syncNow().then(()=>render()); break;
+    case 'sync-unlock': { const p = $('#syncPassOnly').value; if (!p) break; Sync.pass = p; if ($('#syncRememberOnly').checked) { Sync.cfg.pass = p; saveCfg(); } syncNow().then(()=>render()); break; }
+    case 'sync-off': if (arm(b,'syncoff','再点一次：这台设备停止同步')) { disconnectSync(); render(); } break;
+    case 'goto-sync': go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
+    case 'wipe': if (arm(b,'wipe','再点一次：真的全部清空')) { S.demo=false; for (const t of S.txns) bury('t', t.i); for (const x of S.sources) bury('s', x.id); for (const x of S.settings.imports) bury('i', x.id); S.sources=[]; S.txns=[]; S.settings={budgets:{},fixed:[],learned:{},imports:[],su:0}; markDirty([], true); toast(Sync.cfg?'已清空，GitHub 上的数据也会同步清空':'已清空'); render(); } break;
+  }
+});
+document.addEventListener('change', e=>{
+  const t = e.target;
+  if (t.id === 'importSrc') { S.importSrc = t.value; reparse(); render(); return; }
+  if (t.id === 'newSrcType') { S.newSrc.type = t.value; reparse(); render(); return; }
+  if (t.id === 'file') { handleFiles([...t.files]); t.value=''; return; }
+  if (t.id === 'restoreFile') { restoreFromFile(t.files[0]); t.value=''; return; }
+  if (t.id === 'flip') { S.pending.flip = t.checked; reparse(); render(); return; }
+  if (t.id === 'srcFilter') { S.srcFilter = t.value; renderTxRows(); return; }
+  if (t.dataset.map) {
+    const L = S.pending.layout, v = +t.value, k = t.dataset.map;
+    if (k==='mode') { if (t.value==='two') { L.outCol = L.amtCol>=0?L.amtCol:0; L.inCol = Math.min(L.cols.length-1, L.outCol+1); L.amtCol=-1; } else { L.amtCol = L.outCol>=0?L.outCol:0; L.outCol=-1; L.inCol=-1; } }
+    else if (k==='desc0' || k==='desc1') { const arr = [L.descCols[0]??-1, L.descCols[1]??-1]; arr[k==='desc0'?0:1] = v; L.descCols = arr.filter(c=>c>=0); }
+    else L[k] = v;
+    reparse(); render(); return;
+  }
+  if (t.dataset.cat) {
+    const x = S.txns.find(q=>q.i===t.dataset.cat); if (!x) return;
+    x.c = t.value; x.mc = 1; stamp(x); S.settings.learned[learnKey(x.t)] = t.value;
+    const before = new Map(S.txns.map(q=>[q.i,q.c]));
+    analyze(S.txns, S.sources, S.settings.learned);
+    const ms = new Set([ymOf(x.d)]); for (const q of S.txns) if (before.get(q.i)!==q.c) ms.add(ymOf(q.d));
+    const n = S.txns.filter(q=>q!==x && before.get(q.i)!==q.c).length;
+    markDirty(ms, true); if (n) toast('同名商户另外 ' + n + ' 笔也改成了「' + CAT_NAME[t.value] + '」');
+    renderTxRows(); return;
+  }
+  if (t.dataset.srctype) { const s = S.sources.find(s=>s.id===t.dataset.srctype); if (s){ s.type = t.value; stamp(s); runAnalyze(); } return; }
+  if (t.dataset.fx) { const f = S.settings.fixed.find(f=>f.id===t.dataset.fx); if (f){ const k=t.dataset.k; f[k] = k==='amt' ? (+t.value||0) : t.value; markDirty([], true); if (k==='amt') render(); } return; }
+  if (t.dataset.budget) { const v = +t.value; if (v>0) S.settings.budgets[t.dataset.budget] = v; else delete S.settings.budgets[t.dataset.budget]; markDirty([], true); render(); return; }
+});
+document.addEventListener('input', e=>{
+  const t = e.target;
+  if (t.id === 'q') { S.q = t.value; renderTxRows(); }
+  if (t.id === 'newSrcName') { S.newSrc.name = t.value; }
+});
+document.addEventListener('dragover', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d){ e.preventDefault(); d.classList.add('over'); } });
+document.addEventListener('dragleave', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
+document.addEventListener('drop', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d){ e.preventDefault(); d.classList.remove('over'); handleFiles([...e.dataTransfer.files]); } });
+$('#savePill').addEventListener('click', ()=>{ go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); });
+$('#prevM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,-1); render(); });
+$('#nextM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,1); render(); });
+function download(name, text, type){
+  const url = URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+async function restoreFromFile(f){
+  if (!f) return;
+  try {
+    let b2 = JSON.parse(await f.text());
+    if (b2 && b2.app === 'mianmian-ledger' && b2.settings && Array.isArray(b2.txns)) {
+      const o = b2.settings; b2 = { app:'mianmian-ledger-backup', sources:o.sources||[], settings:{ budgets:o.budgets||{}, fixed:o.fixed||[], learned:o.learned||{}, su:Date.now() }, imports:o.imports||[], txns:b2.txns, del:{} };
+    }
+    if (!b2 || b2.app !== 'mianmian-ledger-backup' || !Array.isArray(b2.txns)) throw 0;
+    S.demo = false;
+    const keepDel = S.del;
+    for (const t of S.txns) keepDel['t:'+t.i] = Date.now();
+    applyState(b2);
+    const now = Date.now();
+    for (const t of S.txns) { t.u = now; delete keepDel['t:'+t.i]; }
+    for (const x of S.sources) x.u = now;
+    S.del = { ...keepDel, ...(b2.del||{}) };
+    analyze(S.txns, S.sources, S.settings.learned);
+    markDirty([], true); S.month = latestMonth(); toast('已从备份恢复'); go('overview');
+  } catch(e){ toast('这个文件不是面面家計簿的备份'); }
+}
+async function doConnect(btn){
+  const repo = $('#syncRepo').value, token = $('#syncToken').value, pass = $('#syncPass').value, pass2 = $('#syncPass2').value, rem = $('#syncRemember').checked;
+  if (pass !== pass2) { Sync.err = '两次输入的同步密码不一样'; render(); return; }
+  btn.disabled = true; btn.textContent = '连接中…';
+  const ok = await connectSync(repo, token, pass, rem);
+  if (ok) toast('同步好了。在别的设备上用同样的仓库、token 和密码连接即可。');
+  render();
+}
+function fromHash(){ const h = location.hash.replace('#',''); if (['overview','txns','import','plan'].includes(h)) S.view = h; }
+window.addEventListener('hashchange', ()=>{ fromHash(); render(); });
+fromHash();
+initStore();
+</script>
+</body>
+</html>
