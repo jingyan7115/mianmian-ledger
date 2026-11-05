@@ -1037,9 +1037,9 @@ function viewImport(){
         ${isNew?`<label class="field">名称<input type="text" id="newSrcName" placeholder="例：楽天カード / PayPay / ゆうちょ" value="${esc(S.newSrc.name)}"></label>
         <label class="field">类型<select id="newSrcType">${typeOpts}</select></label>`:''}
       </div></div>
-    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 都能导出 CSV。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
-      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,text/csv" multiple>
-        <div><div class="big">点这里选文件，或拖进来</div><div class="small">CSV 文件（UTF-8 / Shift_JIS 都行）</div></div></label>
+    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 导出的 Excel 或 CSV 都可以。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
+      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,text/csv" multiple>
+        <div><div class="big">点这里选文件，或拖进来</div><div class="small">Excel（.xlsx / .xls）或 CSV（UTF-8 / Shift_JIS 都行）</div></div></label>
     </div>
     ${pending}${res}
     ${hist?`<div class="card"><h2>导入记录</h2><p class="h2sub">传错了可以整批撤销</p><div class="list">${hist}</div></div>`:''}
@@ -1054,6 +1054,7 @@ function csvPreview(P){
   const outSum = parsed.filter(x=>x.o).reduce((s,x)=>s+x.a,0), inSum = parsed.filter(x=>!x.o).reduce((s,x)=>s+x.a,0);
   return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}</h2><p class="h2sub">${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
     <div class="fields">
+      ${P.sheets && P.sheets.length > 1 ? `<label class="field">工作表<select id="sheetSel">${P.sheets.map((sh,i)=>`<option value="${i}" ${P.sheet===i?'selected':''}>${esc(sh.name)}</option>`).join('')}</select></label>` : ''}
       <label class="field">日期列<select data-map="dateCol">${colOpts(L.dateCol)}</select></label>
       <label class="field">内容列<select data-map="desc0">${colOpts(L.descCols[0]??-1,true)}</select></label>
       <label class="field">补充内容列<select data-map="desc1">${colOpts(L.descCols[1]??-1,true)}</select></label>
@@ -1084,7 +1085,21 @@ async function handleFiles(files){
   S.lastResult = null;
   const lower = f.name.toLowerCase();
   const isCsv = /\.(csv|tsv|txt)$/.test(lower) || f.type === 'text/csv';
+  const isXls = /\.(xlsx|xls|xlsm)$/.test(lower);
   let head = '';
+  if (isXls) {
+    let sheets;
+    try { sheets = await readWorkbook(f); }
+    catch(e){ toast('这个 Excel 文件打不开：' + (e && e.message || '可能有密码保护') + '。可以在 Excel 里另存为 CSV 再试。'); return; }
+    if (!sheets.length) { toast('这个 Excel 里没有内容'); return; }
+    const pick = bestSheet(sheets);
+    autoPickSource(f.name, sheets[pick].rows.slice(0,8).map(r=>r.join(' ')).join(' '));
+    S.pending = { kind:'csv', file:f.name, sheets, sheet:pick, flip:false };
+    useSheet(pick);
+    render();
+    const el0 = document.querySelector('.steps .card:nth-child(3)'); if (el0) el0.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
   if (isCsv) {
     const text = decodeBuffer(await f.arrayBuffer());
     head = text;
@@ -1096,11 +1111,55 @@ async function handleFiles(files){
     S.pending = { kind:'csv', file:f.name, rows, layout:L, flip:false, guessed };
     reparse();
   } else {
-    toast('这里只读 CSV，账单在你自己的浏览器里处理，不经过任何人。PDF 或截图请回到网银或 App，改选「CSV 下载」。');
+    toast('这里能读 Excel 和 CSV，账单只在你自己的浏览器里处理。PDF 或截图请回到网银或 App，改选 Excel 或 CSV 下载。');
     return;
   }
   render();
   const el = document.querySelector('.steps .card:nth-child(3)'); if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
+let xlsxReady = null;
+function loadXlsx(){
+  if (!xlsxReady) xlsxReady = new Promise((res, rej)=>{ const s = document.createElement('script'); s.src = 'vendor/xlsx-0.18.5.full.min.js'; s.onload = ()=>res(window.XLSX); s.onerror = ()=>{ xlsxReady = null; rej(new Error('读取 Excel 的组件没加载出来，检查一下网络')); }; document.head.appendChild(s); });
+  return xlsxReady;
+}
+async function readWorkbook(file){
+  const X = await loadXlsx();
+  const wb = X.read(new Uint8Array(await file.arrayBuffer()), { type:'array', cellNF:true, cellDates:false });
+  const out = [];
+  for (const name of wb.SheetNames){
+    const ws = wb.Sheets[name]; if (!ws || !ws['!ref']) continue;
+    const rg = X.utils.decode_range(ws['!ref']);
+    const rows = [];
+    for (let r = rg.s.r; r <= Math.min(rg.e.r, rg.s.r + 20000); r++){
+      const row = [];
+      for (let c = rg.s.c; c <= Math.min(rg.e.c, rg.s.c + 60); c++){
+        const cell = ws[X.utils.encode_cell({ r, c })];
+        row.push(cellText(X, cell));
+      }
+      if (row.some(v=>v!=='')) rows.push(row);
+    }
+    if (rows.length) out.push({ name, rows });
+  }
+  return out;
+}
+function cellText(X, cell){
+  if (!cell || cell.v == null) return '';
+  if (cell.t === 'n' && cell.z && X.SSF.is_date(cell.z)) { const d = X.SSF.parse_date_code(cell.v); if (d && d.y) return d.y + '-' + pad(d.m) + '-' + pad(d.d); }
+  if (cell.t === 'd' && cell.v instanceof Date) { const d = cell.v; return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
+  if (cell.t === 'n') return String(cell.v);
+  return String(cell.w != null && cell.t !== 's' ? cell.w : cell.v).trim();
+}
+function bestSheet(sheets){
+  let best = 0, bestN = -1;
+  sheets.forEach((sh, i)=>{ const L = detectLayout(sh.rows); const n = L ? rowsToTxns(sh.rows, L, currentSrcType(), false).list.length : 0; if (n > bestN) { bestN = n; best = i; } });
+  return best;
+}
+function useSheet(i){
+  const P = S.pending; const rows = P.sheets[i].rows;
+  let L = detectLayout(rows), guessed = true;
+  if (!L) { guessed = false; const w = Math.max(1, ...rows.slice(0,30).map(r=>r.length)); L = { headerRow:0, cols:(rows[0]||[]).concat(Array(w).fill('')).slice(0,w).map((h,k)=>h||('列'+(k+1))), dateCol:0, descCols: w>1?[1]:[], amtCol: Math.min(2,w-1), outCol:-1, inCol:-1 }; }
+  P.sheet = i; P.rows = rows; P.layout = L; P.guessed = guessed;
+  reparse();
 }
 function autoPickSource(fileName, head){
   if (S.importSrc && S.importSrc!=='new') return;
@@ -1263,6 +1322,7 @@ document.addEventListener('change', e=>{
   if (t.id === 'newSrcType') { S.newSrc.type = t.value; reparse(); render(); return; }
   if (t.id === 'file') { handleFiles([...t.files]); t.value=''; return; }
   if (t.id === 'restoreFile') { restoreFromFile(t.files[0]); t.value=''; return; }
+  if (t.id === 'sheetSel') { useSheet(+t.value); render(); return; }
   if (t.id === 'flip') { S.pending.flip = t.checked; reparse(); render(); return; }
   if (t.id === 'srcFilter') { S.srcFilter = t.value; renderTxRows(); return; }
   if (t.dataset.map) {
