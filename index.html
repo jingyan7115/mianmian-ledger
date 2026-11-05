@@ -64,6 +64,9 @@ nav.tabs{display:flex;gap:4px;margin:18px 0 16px;border-bottom:1px solid var(--l
 .tile .lab{font-size:13px;color:var(--muted)}
 .tile .val{font-size:24px;font-weight:600;margin-top:2px}
 .tile .foot{font-size:12px;color:var(--muted);margin-top:4px}
+.tilebtn{appearance:none;font:inherit;color:inherit;text-align:left;cursor:pointer;width:100%}
+.tilebtn:hover{border-color:var(--accent)}
+.tilebtn:hover .lab{color:var(--accent)}
 .tile.excl{background:var(--accent-soft);border-color:transparent}
 .pos{color:var(--good)} .neg{color:var(--bad)}
 .alerts{display:grid;gap:8px;margin:14px 0}
@@ -725,7 +728,7 @@ const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.
 
 const S = {
   sources: [], txns: [], del: {}, settings: { budgets:{}, fixed:[], learned:{}, imports:[], su:0 },
-  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '', catFilter: '',
+  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '', catFilter: '', incomeView: false,
   importSrc: '', newSrc: { name:'', type:'card' }, pending: null, lastResult: null, busy: false, queue: [], batch: null, results: [], srcGuessed: false
 };
 
@@ -1113,7 +1116,7 @@ function viewOverview(){
   const rate = M.income > 0 ? Math.round((M.income - M.expense) / M.income * 100) : null;
   const tiles = `
   <div class="grid tiles">
-    <div class="card tile"><div class="lab">收入</div><div class="val num">${yen(M.income)}</div><div class="foot">不含转账、充值和退款</div></div>
+    <button class="card tile tilebtn" data-incomego="1" title="看这个月都有哪些收入"><div class="lab">收入 ›</div><div class="val num">${yen(M.income)}</div><div class="foot">不含转账、充值和退款 · 点开看明细</div></button>
     <div class="card tile"><div class="lab">实际支出</div><div class="val num">${yen(M.expense)}</div><div class="foot">${budgetTotal?('设了预算的分类：'+yen(budgetSpent)+' / '+yen(budgetTotal)+(budgetSpent>budgetTotal?' · 超了':'')):'还没设预算'}</div></div>
     <div class="card tile"><div class="lab">结余</div><div class="val num ${M.net>=0?'pos':'neg'}">${yen(M.net)}</div><div class="foot">${rate!==null?('结余率 '+rate+'%'):''}${M.save?(' · 另存入投资 '+yen(M.save)):''}${(M.reimb||M.reimbIn)?(' · 报销垫付 '+yen(M.reimb)+' / 到账 '+yen(M.reimbIn)):''}</div></div>
     <div class="card tile excl"><div class="lab">已排除，没算进支出</div><div class="val num">${yen(M.excludedAmt)}</div><div class="foot">重复 ${M.dup.length} 笔 · 转账/还款/充值 ${M.xfer.length} 笔</div></div>
@@ -1209,7 +1212,19 @@ function viewTxns(){
   const chip = (k,label) => `<button class="chip ${S.filter===k?'on':''}" data-filter="${k}">${label} <span class="num">${cnt[k]}</span></button>`;
   const srcOpts = `<option value="">全部来源</option>` + S.sources.map(s=>`<option value="${esc(s.id)}" ${S.srcFilter===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
   let catBar = '';
-  if (S.catFilter) {
+  if (S.incomeView) {
+    const CV = conv();
+    const inc = L.filter(x=>!x.o && x.st==='ok');
+    const by = {};
+    for (const x of inc) { const v = CV(x); if (v == null) continue; (by[x.c] || (by[x.c] = { n:0, v:0 })); by[x.c].n++; by[x.c].v += v; }
+    const counted = Object.entries(by).filter(([k])=>k!=='refund' && k!=='reimb_in').sort((a,b)=>b[1].v-a[1].v);
+    const other = Object.entries(by).filter(([k])=>k==='refund' || k==='reimb_in');
+    const total = counted.reduce((a,[,o])=>a+o.v,0), n = counted.reduce((a,[,o])=>a+o.n,0);
+    const chipI = (k, o, extra) => `<button class="chip ${S.catFilter===k?'on':''}" data-incat="${k}">${esc(CAT_NAME[k]||k)} <span class="num">${yen(o.v)}</span>${extra||''}</button>`;
+    catBar = `<div class="catbar" style="display:block"><div style="display:flex;flex-wrap:wrap;gap:8px 14px;justify-content:space-between;align-items:center"><span>${fmtMonth(S.month)} · <b>收入</b> · 共 <b class="num">${n}</b> 笔 · 合计 <b class="num">${yen(total)}</b></span><span class="acts"><button class="btn sm" data-go="overview">‹ 回概览</button><button class="btn sm" data-act="clear-cat">看全部明细</button></span></div>
+      <div class="toolbar" style="margin:10px 0 0"><button class="chip ${!S.catFilter?'on':''}" data-incat="">全部收入</button>${counted.map(([k,o])=>chipI(k,o)).join('')}${other.map(([k,o])=>chipI(k,o,' <span class="muted small">不计入收入</span>')).join('')}</div>
+      ${!counted.length ? '<p class="small muted" style="margin:8px 0 0">这个月还没有计入的收入。</p>' : ''}</div>`;
+  } else if (S.catFilter) {
     const CV = conv();
     const CL = L.filter(x=>x.c===S.catFilter && x.st==='ok');
     const sum = CL.reduce((a,x)=>a + (x.o ? 1 : -1) * (CV(x)||0), 0);
@@ -1221,6 +1236,7 @@ function viewTxns(){
     <div class="tablewrap"><table><thead><tr><th>日期</th><th>内容</th><th>来源</th><th>分类</th><th class="r">金额</th><th class="r">状态</th></tr></thead><tbody id="txBody"></tbody></table></div>
     <p class="small muted">改分类后，同名商户以后会自动用这个分类。标成「重复」或「转账」的不算进支出。</p>`;
 }
+function renderTxView(){ if (S.view === 'txns') { $('#view').innerHTML = viewTxns(); renderTxRows(); } else render(); }
 function renderTxRows(){
   const body = $('#txBody'); if (!body) return;
   const q = norm(S.q);
@@ -1232,6 +1248,7 @@ function renderTxRows(){
   else if (S.filter==='other') L = L.filter(x=>x.st==='ok' && x.o && x.c==='other');
   if (S.srcFilter) L = L.filter(x=>x.s===S.srcFilter);
   if (S.catFilter) L = L.filter(x=>x.c===S.catFilter && x.st==='ok');
+  else if (S.incomeView) L = L.filter(x=>!x.o && x.st==='ok' && x.c!=='refund' && x.c!=='reimb_in');
   if (q) L = L.filter(x=>norm(x.t).includes(q) || norm(srcName(x.s)).includes(q));
   L.sort((a,b)=> a.d===b.d ? (a.a-b.a) : (a.d<b.d?1:-1));
   if (S.filter==='sus') L.sort((a,b)=> (a.a-b.a) || (a.d<b.d?-1:1));
@@ -1806,8 +1823,10 @@ function arm(btn, key, label){ if (armed[key] && Date.now()-armed[key] < 4000) {
 document.addEventListener('click', e=>{
   const tab = e.target.closest('.tab'); if (tab) { go(tab.dataset.v); return; }
   const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
-  const cg = e.target.closest('[data-catgo]'); if (cg) { S.catFilter = cg.dataset.catgo; S.filter = 'ok'; S.q = ''; S.srcFilter = ''; go('txns'); return; }
-  const fl = e.target.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; S.catFilter = ''; if (S.view!=='txns') go('txns'); else render(); return; }
+  const ig = e.target.closest('[data-incomego]'); if (ig) { S.incomeView = true; S.catFilter = ''; S.filter = 'ok'; S.q = ''; S.srcFilter = ''; go('txns'); return; }
+  const ic = e.target.closest('[data-incat]'); if (ic) { S.catFilter = ic.dataset.incat || ''; renderTxView(); return; }
+  const cg = e.target.closest('[data-catgo]'); if (cg) { S.incomeView = false; S.catFilter = cg.dataset.catgo; S.filter = 'ok'; S.q = ''; S.srcFilter = ''; go('txns'); return; }
+  const fl = e.target.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; S.catFilter = ''; S.incomeView = false; if (S.view!=='txns') go('txns'); else render(); return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
   const x = id ? S.txns.find(t=>t.i===id) : null;
@@ -1837,7 +1856,7 @@ document.addEventListener('click', e=>{
     case 'sync-now': syncNow().then(()=>render()); break;
     case 'sync-unlock': { const p = $('#syncPassOnly').value; if (!p) break; Sync.pass = p; if ($('#syncRememberOnly').checked) { Sync.cfg.pass = p; saveCfg(); } syncNow().then(()=>render()); break; }
     case 'sync-off': if (arm(b,'syncoff','再点一次：这台设备停止同步')) { disconnectSync(); render(); } break;
-    case 'clear-cat': S.catFilter = ''; S.filter = 'all'; render(); break;
+    case 'clear-cat': S.catFilter = ''; S.incomeView = false; S.filter = 'all'; render(); break;
     case 'goto-rates': go('plan'); setTimeout(()=>{ const el = $('#rates'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'goto-sync': go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'wipe': if (arm(b,'wipe','再点一次：真的全部清空')) { S.demo=false; for (const t of S.txns) bury('t', t.i); for (const x of S.sources) bury('s', x.id); for (const x of S.settings.imports) bury('i', x.id); S.sources=[]; S.txns=[]; S.settings={budgets:{},fixed:[],learned:{},imports:[],su:0}; markDirty([], true); toast(Sync.cfg?'已清空，GitHub 上的数据也会同步清空':'已清空'); render(); } break;
@@ -1870,7 +1889,7 @@ document.addEventListener('change', e=>{
     const ms = new Set([ymOf(x.d)]); for (const q of S.txns) if (before.get(q.i)!==q.c) ms.add(ymOf(q.d));
     const n = S.txns.filter(q=>q!==x && before.get(q.i)!==q.c).length;
     markDirty(ms, true); if (n) toast('同名商户另外 ' + n + ' 笔也改成了「' + CAT_NAME[t.value] + '」');
-    renderTxRows(); return;
+    if (S.incomeView || S.catFilter) renderTxView(); else renderTxRows(); return;
   }
   if (t.dataset.srctype) { const s = S.sources.find(s=>s.id===t.dataset.srctype); if (s){ s.type = t.value; stamp(s); runAnalyze(); } return; }
   if (t.dataset.fx) { const f = S.settings.fixed.find(f=>f.id===t.dataset.fx); if (f){ const k=t.dataset.k; f[k] = k==='amt' ? (+t.value||0) : t.value; markDirty([], true); if (k==='amt') render(); } return; }
