@@ -1258,7 +1258,8 @@ function viewImport(){
   const typeOpts = SRC_TYPES.map(([k,n])=>`<option value="${k}" ${S.newSrc.type===k?'selected':''}>${n}</option>`).join('');
   let pending = '';
   const P = S.pending;
-  if (P) pending = P.kind === 'pdfpass' ? `<div class="card"><h2>③ 「${esc(P.file)}」有密码</h2><p class="h2sub">${P.wrong ? '密码不对，再试一次。' : '这个 PDF 设了打开密码。密码只在你的浏览器里用来打开文件，不会保存。'}</p>
+  if (P && P.kind === 'ocr') pending = `<div class="card"><h2>③ 正在识别「${esc(P.file)}」</h2><p class="h2sub">图片只在你的浏览器里识别，不会上传。第一次会先下载识别组件（几 MB），之后会快一些。</p><p class="small" id="ocrProg">${esc(P.stage||'')}</p></div>`;
+  else if (P) pending = P.kind === 'pdfpass' ? `<div class="card"><h2>③ 「${esc(P.file)}」有密码</h2><p class="h2sub">${P.wrong ? '密码不对，再试一次。' : '这个 PDF 设了打开密码。密码只在你的浏览器里用来打开文件，不会保存。'}</p>
       <div class="fields"><label class="field">PDF 密码<input type="password" id="pdfPass" autocomplete="off"></label><button class="btn pri" data-act="pdf-pass">打开</button><button class="btn" data-act="cancel-pending">跳过这个文件</button></div></div>` : csvPreview(P);
   const R = S.results || [];
   const batchRes = (!P && R.length > 1) ? `<div class="card"><h2>这一批导入完成：${R.length} 个文件</h2><div class="kv" style="margin-top:8px">
@@ -1280,9 +1281,9 @@ function viewImport(){
         <label class="field">类型<select id="newSrcType">${typeOpts}</select></label>
         <label class="field">币种<select id="newSrcCur">${CURS.map(([k,n])=>`<option value="${k}" ${(S.newSrc.cur||'JPY')===k?'selected':''}>${n}</option>`).join('')}</select></label>`:''}
       </div></div>
-    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 导出的 Excel、CSV、PDF 都可以。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
-      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.pdf,text/csv,application/pdf" multiple>
-        <div><div class="big">点这里选文件，或拖进来（可以一次选很多个）</div><div class="small">Excel（.xlsx / .xls）、CSV（UTF-8 / Shift_JIS / GBK）、带文字的 PDF</div></div></label>
+    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 导出的 Excel、CSV、PDF 都可以，也能传账单截图。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
+      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.pdf,text/csv,application/pdf,image/*" multiple>
+        <div><div class="big">点这里选文件，或拖进来（可以一次选很多个）</div><div class="small">Excel（.xlsx / .xls）、CSV（UTF-8 / Shift_JIS / GBK）、PDF、截图或照片（PNG / JPG）</div></div></label>
     </div>
     ${pending}${res}${batchRes}
     ${hist?`<div class="card"><h2>导入记录</h2><p class="h2sub">传错了可以整批撤销</p><div class="list">${hist}</div></div>`:''}
@@ -1301,7 +1302,7 @@ function csvPreview(P){
   const srcWarn = S.srcGuessed ? '' : (S.importSrc && S.importSrc!=='new')
     ? `<div class="alert warn" style="margin:0 0 10px"><span>看不出这份是哪家的账单，现在会记到「${esc(srcName(S.importSrc))}」。不对的话在上面 ① 里换一下。</span></div>`
     : `<div class="alert warn" style="margin:0 0 10px"><span>看不出这份是哪家的账单，请在上面 ① 里选一个来源，或者新建一个（比如「ゆうちょ銀行」）。</span></div>`;
-  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}${prog}</h2>${srcWarn}<p class="h2sub">${P.pdf?'PDF 里的表格是按文字位置还原出来的，请特别留意日期和金额对不对。':''}${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
+  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}${prog}</h2>${srcWarn}<p class="h2sub">${P.pdf?'PDF 里的表格是按文字位置还原出来的，请特别留意日期和金额对不对。':''}${P.ocr?'这是从图片里识别出来的文字，可能有认错的数字或字，导入前请逐行核对日期和金额。':''}${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
     <div class="fields">
       ${P.sheets && P.sheets.length > 1 ? `<label class="field">工作表<select id="sheetSel">${P.sheets.map((sh,i)=>`<option value="${i}" ${P.sheet===i?'selected':''}>${esc(sh.name)}</option>`).join('')}</select></label>` : ''}
       <label class="field">日期列<select data-map="dateCol">${colOpts(L.dateCol)}</select></label>
@@ -1347,8 +1348,8 @@ function currentSrcType(){
   return S.newSrc.type;
 }
 async function handleFiles(files){
-  const ok = files.filter(f=>/\.(csv|tsv|txt|xlsx|xls|xlsm|pdf)$/i.test(f.name));
-  if (ok.length < files.length) toast('有 ' + (files.length-ok.length) + ' 个文件不是 Excel、CSV 或 PDF，已跳过。');
+  const ok = files.filter(f=>/\.(csv|tsv|txt|xlsx|xls|xlsm|pdf|png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(f.name) || /^image\//.test(f.type));
+  if (ok.length < files.length) toast('有 ' + (files.length-ok.length) + ' 个文件不是 Excel、CSV、PDF 或图片，已跳过。');
   if (!ok.length) return;
   S.queue = ok.slice(1); S.batch = { total: ok.length, done: 0, added: 0, skipped: 0, dup: 0, xfer: 0, sus: 0 };
   S.results = [];
@@ -1363,6 +1364,19 @@ async function openFile(f, pdfPass){
   if (!f) return;
   S.lastResult = null;
   const lower = f.name.toLowerCase();
+  if (/^image\//.test(f.type) || /\.(png|jpe?g|webp|gif|bmp|heic|heif)$/.test(lower)) {
+    S.pending = { kind:'ocr', file:f.name, progress:0, stage:'准备识别…' }; render();
+    let rows;
+    try { rows = await ocrImageRows(f, (stage, pr)=>{ if (S.pending && S.pending.kind==='ocr') { S.pending.stage = stage; S.pending.progress = pr; const el = $('#ocrProg'); if (el) el.textContent = stage + (pr ? ' ' + Math.round(pr*100) + '%' : ''); } }); }
+    catch(e){ return failFile('这张图片识别失败：' + ((e && e.message) || '未知原因') + (/heic|heif/.test(lower) ? '。iPhone 照片的 HEIC 格式在这个浏览器里打不开，请截图或转成 JPG/PNG 再传。' : '')); }
+    if (!rows.length || rows.length < 2) return failFile('「' + f.name + '」里没认出交易。请确认截图里有日期和金额，或者换成 CSV / Excel / PDF。');
+    autoPickSource(f.name, rows.slice(0,40).map(r=>r.join(' ')).join('\n'));
+    S.pending = { kind:'csv', file:f.name, sheets:[{ name:'图片', rows }], sheet:0, flip:false, ocr:true };
+    useSheet(0);
+    render();
+    const elo = document.querySelector('.steps .card:nth-child(3)'); if (elo) elo.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
   if (/\.pdf$/.test(lower) || f.type === 'application/pdf') {
     let rows;
     try { rows = await readPdfRows(f, pdfPass); }
@@ -1476,6 +1490,130 @@ function pdfLinesToRows(lines){
     }
     if (row.some(v => v !== '')) rows.push(row);
   }
+  return rows;
+}
+// ---- Images: OCR in the browser with tesseract.js (bundled; nothing leaves the device) ----
+let tessReady = null;
+function loadTesseract(){
+  if (!tessReady) tessReady = new Promise((res, rej)=>{ const s = document.createElement('script'); s.src = 'vendor/tesseract/tesseract.min.js'; s.onload = ()=>res(window.Tesseract); s.onerror = ()=>{ tessReady = null; rej(new Error('识别图片的组件没加载出来，检查一下网络')); }; document.head.appendChild(s); });
+  return tessReady;
+}
+async function imageCanvas(file){
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch(e){ bmp = await new Promise((res, rej)=>{ const im = new Image(); im.onload = ()=>res(im); im.onerror = ()=>rej(new Error('图片打不开')); im.src = URL.createObjectURL(file); }); }
+  const w = bmp.width, h = bmp.height;
+  const scale = w < 1400 ? Math.min(2.5, 1400 / w) : (w > 3000 ? 3000 / w : 1);
+  const cv = document.createElement('canvas'); cv.width = Math.round(w*scale); cv.height = Math.round(h*scale);
+  const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, cv.width, cv.height);
+  const id = g.getImageData(0, 0, cv.width, cv.height), d = id.data;
+  let sum = 0; for (let i=0;i<d.length;i+=4) sum += d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+  const dark = sum / (d.length/4) < 110;
+  for (let i=0;i<d.length;i+=4){ let v = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114; if (dark) v = 255 - v; d[i]=d[i+1]=d[i+2]=v; }
+  g.putImageData(id, 0, 0);
+  return cv;
+}
+const CJK_GAP = /([\u3040-\u30ff\u3400-\u9fff\uff01-\uff5e])\s+(?=[\u3040-\u30ff\u3400-\u9fff\uff01-\uff5e])/g;
+async function ocrImageRows(file, onProgress){
+  const T = await loadTesseract();
+  const cur = currentSrcCur();
+  const lang = cur === 'CNY' ? 'chi_sim+eng' : 'jpn+eng';
+  const base = new URL('vendor/tesseract/', location.href).href;
+  onProgress && onProgress('载入识别组件…', 0);
+  const worker = await T.createWorker(lang, 1, {
+    workerPath: base + 'worker.min.js', corePath: base + 'core', langPath: base + 'lang', gzip: true,
+    logger: m => { if (onProgress && m && m.status) onProgress(m.status === 'recognizing text' ? '正在识别文字…' : '载入识别组件…', m.progress || 0); }
+  });
+  let data;
+  try { const cv = await imageCanvas(file); ({ data } = await worker.recognize(cv)); }
+  finally { try { await worker.terminate(); } catch(e){} }
+  const lines = (data.lines || []).map(l => {
+    const ws = (l.words || []).filter(w => w.text && w.text.trim() && (w.confidence == null || w.confidence > 25));
+    const h = ws.length ? Math.max(8, ...ws.map(w => w.bbox.y1 - w.bbox.y0)) : 12;
+    const cells = [];
+    for (const w of ws){
+      const c = cells[cells.length-1];
+      if (c && w.bbox.x0 - c.x2 <= h * 0.9) { c.s += ' ' + w.text; c.x2 = w.bbox.x1; }
+      else cells.push({ x: w.bbox.x0, x2: w.bbox.x1, s: w.text });
+    }
+    return cells.map(c => ({ ...c, s: c.s.replace(CJK_GAP, '$1').trim() })).filter(c => c.s);
+  }).filter(l => l.length);
+  let hdrScore = 0;
+  for (const line of lines.slice(0, 60)) { const hdr = line.map(c=>norm(c.s)); let sc = 0; for (const key of ['date','desc','amt','out','inn']) if (hdr.some(h => h && h.length < 20 && HKN[key].some(k => h.includes(k)))) sc++; hdrScore = Math.max(hdrScore, sc); }
+  if (hdrScore >= 2) {
+    const rows = pdfLinesToRows(lines);
+    const L = rows.length > 1 ? detectLayout(rows) : null;
+    if (L && L.dateCol >= 0) {
+      let prev = null;
+      const amtCols = [L.amtCol, L.outCol, L.inCol].filter(c=>c>=0);
+      for (let r = L.headerRow + 1; r < rows.length; r++){
+        const row = rows[r];
+        const d = parseDate(row[L.dateCol]);
+        if (d) { prev = d; continue; }
+        const hasAmt = amtCols.some(c => !isNaN(parseAmount(row[c])) && parseAmount(row[c]));
+        const hasText = row.some((v,k)=>v && !amtCols.includes(k) && !parseDate(v));
+        if (prev && hasAmt && hasText && !SKIP_DESC.test(norm(row.join('')))) {
+          const dc = L.descCols[0] ?? row.findIndex((v,k)=>v && !amtCols.includes(k));
+          row[L.dateCol] = prev;
+          if (dc >= 0) row[dc] = (row[dc] || '') + '（日期没认出，暂用上一行的）';
+        }
+      }
+    }
+    if (rows.length > 1) return rows;
+  }
+  return freeformRows(lines.map(l => l.map(c=>c.s).join(' ')));
+}
+const FF_SKIP = /残高|余额|余額|合計|合计|小計|小计|利用可能|ポイント残|総額|本月|当月|账单|請求額|ご請求/;
+const FF_AMT = /([+＋\-−－–]?\s*[¥￥]\s*\d[\d,，.]*|[+＋\-−－–]?\s*\d{1,3}(?:[,，.]\d{3})+(?:\.\d{1,2})?(?!\d)\s*(?:円|元)?|[+＋\-−－–]?\s*\d+(?:\.\d{1,2})?\s*(?:円|元)|[+＋\-−－–]\s*\d+(?:\.\d{1,2})?(?![\d.:\/]))/g;
+function ffDate(t, refYear){
+  let m;
+  if ((m = t.match(/(\d{4})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})\s*日?/))) return { d: validYMD(m[1], m[2], m[3]), raw: m[0] };
+  if ((m = t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/))) return { d: validYMD(refYear, m[1], m[2]), raw: m[0], noYear: true };
+  if ((m = t.match(/(?<![\d:.\/])(\d{1,2})\/(\d{1,2})(?![\d\/])/))) return { d: validYMD(refYear, m[1], m[2]), raw: m[0], noYear: true };
+  return null;
+}
+function freeformRows(lineTexts){
+  const today = todayStr(), now = new Date();
+  let refYear = now.getFullYear();
+  for (const t of lineTexts) { const m = String(t).normalize('NFKC').match(/(20\d{2})\s*[\/\-.年]\s*\d{1,2}/); if (m) { refYear = +m[1]; break; } }
+  const items = []; let curDate = null, carry = [];
+  const clean = t => String(t).normalize('NFKC').replace(CJK_GAP, '$1').replace(/\s+/g, ' ').trim();
+  const lines = lineTexts.map(clean);
+  for (let i = 0; i < lines.length; i++){
+    let t = lines[i];
+    if (!t) continue;
+    const dd = ffDate(t, refYear);
+    let dHere = null;
+    if (dd && dd.d) { dHere = dd.d; if (dd.noYear && dHere > today) dHere = validYMD(refYear-1, dHere.slice(5,7), dHere.slice(8,10)); t = t.replace(dd.raw, ' '); t = t.replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, ' '); }
+    if (FF_SKIP.test(t)) { if (dHere) curDate = dHere; carry = []; continue; }
+    const amts = [...t.matchAll(FF_AMT)].map(m => m[0]).filter(a => /\d/.test(a));
+    if (!amts.length) {
+      if (dHere) { curDate = dHere; const last = items[items.length-1]; if (last && !last.d && last.i === i-1) last.d = dHere; }
+      const rest = t.replace(/[\s・|:：-]+/g, ' ').trim();
+      if (rest && !/^\d+$/.test(rest)) { carry.push(rest); if (carry.length > 2) carry.shift(); }
+      continue;
+    }
+    const raw = amts[amts.length-1];
+    let desc = t; for (const a of amts) desc = desc.replace(a, ' ');
+    desc = desc.replace(/[|:：]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!desc || desc.length < 2) desc = carry.join(' ');
+    carry = [];
+    const v = parseAmount(raw.replace(/(\d)[.](?=\d{3}(?!\d))/g, '$1'));
+    if (!v || isNaN(v)) continue;
+    let dir = /^[+＋]/.test(raw.trim()) ? '收入' : /^[\-−－–]/.test(raw.trim()) ? '支出' : '';
+    if (!dir) dir = /入金|チャージ|收入|退款|返金|返品|給与|振込入金|收到|到账/.test(desc) ? '收入' : '支出';
+    items.push({ i, d: dHere, a: Math.abs(v), t: desc || '（无描述）', dir });
+    if (dHere) curDate = dHere;
+  }
+  for (let k = 0; k < items.length; k++){
+    const it = items[k];
+    if (!it.d) { const nx = lines.slice(it.i+1, it.i+3).map(l=>ffDate(l, refYear)).find(x=>x && x.d); it.d = nx ? nx.d : null; }
+  }
+  let last = null;
+  for (const it of items){ if (it.d) last = it.d; else it.d = last; }
+  const first = items.find(it => it.d); if (first) for (const it of items) if (!it.d) it.d = first.d;
+  const rows = [['日付','内容','金額','收支']];
+  for (const it of items) if (it.d) rows.push([it.d, it.t.slice(0,80), String(it.a), it.dir]);
   return rows;
 }
 let xlsxReady = null;
