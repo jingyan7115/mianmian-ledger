@@ -171,9 +171,9 @@ const EXP_CATS = [
   ['food','超市·便利店'],['eat','外食·咖啡·外卖'],['home','房租·住房'],['util','水电燃气'],['tel','通信·网络'],
   ['sub','订阅服务'],['trans','交通'],['shop','购物·日用'],['cat','面面'],['health','医疗·药妆'],
   ['fun','娱乐·爱好'],['travel','旅游'],['edu','学习·书'],['work','工作·素材'],['social','人情·社交'],['ins','保险·税金'],['cash','现金取出'],
-  ['card','信用卡还款（未导入明细）'],['wallet','钱包充值（未导入明细）'],['other','其他支出'],['save','储蓄·投资']
+  ['card','信用卡还款（未导入明细）'],['wallet','钱包充值（未导入明细）'],['other','其他支出'],['save','储蓄·投资'],['reimb','报销（先垫付）']
 ];
-const INC_CATS = [['salary','工资'],['side','副业收入'],['refund','退款'],['inc_other','其他收入']];
+const INC_CATS = [['salary','工资'],['side','副业收入'],['refund','退款'],['reimb_in','报销到账'],['inc_other','其他收入']];
 const CAT_NAME = Object.fromEntries([...EXP_CATS, ...INC_CATS]);
 const SRC_TYPES = [['card','信用卡'],['bank','银行账户'],['wallet','电子钱包（PayPay等）'],['app','记账App汇总'],['other','其他']];
 const SRC_TYPE_NAME = Object.fromEntries(SRC_TYPES);
@@ -258,6 +258,7 @@ function categorize(x, srcType, learned){
   if (learned && learned[key]) return learned[key];
   if (x.bc) { const m = mapBillCat(x.bc, x.o); if (m) return m; }
   if (!x.o) {
+    if (/报销|経費精算|ケイヒセイサン|立替金|タテカエ/.test(n)) return 'reimb_in';
     if (INCOME_SAL.test(n)) return 'salary';
     if (/返金|返品|キャンセル|取消|REFUND|退款|退货/.test(n) || srcType === 'card') return 'refund';
     return 'inc_other';
@@ -288,6 +289,7 @@ const BILL_CATS = [
 function mapBillCat(bc, out){
   const n = String(bc||'').normalize('NFKC');
   if (!n) return null;
+  if (/报销|報銷|立替|経費精算|精算/.test(n)) return out ? 'reimb' : 'reimb_in';
   if (!out) {
     if (/工资|薪|給与|給料|賞与|奖金/.test(n)) return 'salary';
     if (/退款|返金|返品|退货/.test(n)) return 'refund';
@@ -651,16 +653,18 @@ function monthSummary(txns, ym, conv){
   conv = conv || (x=>x.a);
   const L = txns.filter(x=>ymOf(x.d)===ym);
   const ok = L.filter(x=>x.st==='ok');
-  let income=0, expense=0, refund=0, save=0;
+  let income=0, expense=0, refund=0, save=0, reimb=0, reimbIn=0;
   const byCat = {}, norate = [];
   for (const x of ok){
     const v = conv(x);
     if (v == null) { norate.push(x); continue; }
     if (x.o){
       if (x.c === 'save') { save += v; continue; }
+      if (x.c === 'reimb') { reimb += v; continue; }
       expense += v; byCat[x.c] = (byCat[x.c]||0) + v;
     } else {
       if (x.c === 'refund') { refund += v; continue; }
+      if (x.c === 'reimb_in') { reimbIn += v; continue; }
       income += v;
     }
   }
@@ -668,7 +672,7 @@ function monthSummary(txns, ym, conv){
   const dup = L.filter(x=>x.st==='dup'), xfer = L.filter(x=>x.st==='xfer');
   const sus = L.filter(x=>x.sus && x.st==='ok');
   const warn = L.filter(x=>x.warn && x.st==='ok');
-  return { ym, count:L.length, income, expense, refund, save, net: income-expense, byCat,
+  return { ym, count:L.length, income, expense, refund, save, reimb, reimbIn, net: income-expense, byCat,
     dup, xfer, sus, warn, norate,
     excludedAmt: dup.reduce((s,x)=>s+(conv(x)||0),0) + xfer.filter(x=>x.o).reduce((s,x)=>s+(conv(x)||0),0) };
 }
@@ -1078,7 +1082,7 @@ function viewOverview(){
   <div class="grid tiles">
     <div class="card tile"><div class="lab">收入</div><div class="val num">${yen(M.income)}</div><div class="foot">不含转账、充值和退款</div></div>
     <div class="card tile"><div class="lab">实际支出</div><div class="val num">${yen(M.expense)}</div><div class="foot">${budgetTotal?('设了预算的分类：'+yen(budgetSpent)+' / '+yen(budgetTotal)+(budgetSpent>budgetTotal?' · 超了':'')):'还没设预算'}</div></div>
-    <div class="card tile"><div class="lab">结余</div><div class="val num ${M.net>=0?'pos':'neg'}">${yen(M.net)}</div><div class="foot">${rate!==null?('结余率 '+rate+'%'):''}${M.save?(' · 另存入投资 '+yen(M.save)):''}</div></div>
+    <div class="card tile"><div class="lab">结余</div><div class="val num ${M.net>=0?'pos':'neg'}">${yen(M.net)}</div><div class="foot">${rate!==null?('结余率 '+rate+'%'):''}${M.save?(' · 另存入投资 '+yen(M.save)):''}${(M.reimb||M.reimbIn)?(' · 报销垫付 '+yen(M.reimb)+' / 到账 '+yen(M.reimbIn)):''}</div></div>
     <div class="card tile excl"><div class="lab">已排除，没算进支出</div><div class="val num">${yen(M.excludedAmt)}</div><div class="foot">重复 ${M.dup.length} 笔 · 转账/还款/充值 ${M.xfer.length} 笔</div></div>
   </div>`;
   const alerts = [];
@@ -1093,7 +1097,7 @@ function viewOverview(){
   if (uncategorized.length >= 3) alerts.push(`<div class="alert info"><span>${uncategorized.length} 笔支出还在「其他」里。改一次分类，同名商户以后都会自动归好。</span><button class="btn sm" data-filter="other">去分类</button></div>`);
 
   // category bars
-  const cats = EXP_CATS.filter(([k])=>k!=='save').map(([k,n])=>({k,n,spent:M.byCat[k]||0,budget:+budgets[k]||0})).filter(c=>c.spent||c.budget).sort((a,b)=>b.spent-a.spent);
+  const cats = EXP_CATS.filter(([k])=>k!=='save' && k!=='reimb').map(([k,n])=>({k,n,spent:M.byCat[k]||0,budget:+budgets[k]||0})).filter(c=>c.spent||c.budget).sort((a,b)=>b.spent-a.spent);
   const maxSpent = Math.max(1, ...cats.map(c=>Math.max(c.spent,c.budget)));
   const bars = cats.map(c=>{
     let pct, cls, row2;
@@ -1471,7 +1475,7 @@ function viewPlan(){
   const budgetTotal = Object.entries(S.settings.budgets).filter(([k])=>k!=='save').reduce((s,[,v])=>s+(+v||0),0);
   const fixedOutside = S.settings.fixed.filter(f=>!(+S.settings.budgets[f.cat])).reduce((s,f)=>s+(+f.amt||0),0);
   const planned = budgetTotal + fixedOutside;
-  const budgets = EXP_CATS.filter(([k])=>!['card','wallet','cash'].includes(k)).map(([k,n])=>`<label>${esc(n)}<input type="number" min="0" step="1000" data-budget="${k}" value="${S.settings.budgets[k]||''}" placeholder="—"></label>`).join('');
+  const budgets = EXP_CATS.filter(([k])=>!['card','wallet','cash','reimb'].includes(k)).map(([k,n])=>`<label>${esc(n)}<input type="number" min="0" step="1000" data-budget="${k}" value="${S.settings.budgets[k]||''}" placeholder="—"></label>`).join('');
   const sources = S.sources.map(s=>{ const n = S.txns.filter(x=>x.s===s.id).length; return `<div class="li"><span>${esc(s.name)} <span class="muted small">${n} 笔</span></span><span class="acts"><select data-srccur="${esc(s.id)}" aria-label="币种">${CURS.map(([k,nm])=>`<option value="${k}" ${(s.cur||'JPY')===k?'selected':''}>${nm}</option>`).join('')}</select><select data-srctype="${esc(s.id)}" aria-label="类型">${SRC_TYPES.map(([k,nm])=>`<option value="${k}" ${s.type===k?'selected':''}>${nm}</option>`).join('')}</select><button class="btn sm danger" data-act="del-src" data-id="${esc(s.id)}">删除来源和它的记录</button></span></div>`; }).join('') || '<div class="empty">还没有来源，导入账单时会自动建立</div>';
   return `<div class="steps">
     ${syncCard()}
