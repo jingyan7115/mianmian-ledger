@@ -73,6 +73,9 @@ nav.tabs{display:flex;gap:4px;margin:18px 0 16px;border-bottom:1px solid var(--l
 .bars{display:grid;gap:10px}
 .bar .row1{display:flex;justify-content:space-between;gap:8px;font-size:14px}
 .bar .row1 .amt{white-space:nowrap}
+.catlink{appearance:none;border:0;background:none;padding:0;font:inherit;color:var(--ink);cursor:pointer;text-align:left}
+.catlink:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.catbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:14px}
 .track{position:relative;height:8px;border-radius:99px;background:var(--line);margin-top:4px;overflow:hidden}
 .fill{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent)}
 .fill.good{background:var(--good)} .fill.warn{background:var(--warn)} .fill.bad{background:var(--bad)}
@@ -722,7 +725,7 @@ const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.
 
 const S = {
   sources: [], txns: [], del: {}, settings: { budgets:{}, fixed:[], learned:{}, imports:[], su:0 },
-  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '',
+  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '', catFilter: '',
   importSrc: '', newSrc: { name:'', type:'card' }, pending: null, lastResult: null, busy: false, queue: [], batch: null, results: [], srcGuessed: false
 };
 
@@ -1129,7 +1132,7 @@ function viewOverview(){
     let pct, cls, row2;
     if (c.budget){ pct = Math.min(100, c.spent/c.budget*100); const r = c.spent/c.budget; cls = r>1?'bad':r>0.8?'warn':'good'; row2 = r>1 ? `超出预算 ${yen(c.spent-c.budget)}` : `还剩 ${yen(c.budget-c.spent)}`; }
     else { pct = c.spent/maxSpent*100; cls=''; row2 = '没设预算'; }
-    return `<div class="bar"><div class="row1"><span>${esc(c.n)}</span><span class="amt num">${yen(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div></div>`;
+    return `<div class="bar"><div class="row1"><button class="catlink" data-catgo="${c.k}" title="看这个分类的全部明细">${esc(c.n)} ›</button><span class="amt num">${yen(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div></div>`;
   }).join('') || '<div class="empty">这个月还没有计入的支出</div>';
   const refundLine = M.refund ? `<p class="small muted" style="margin:10px 0 0">已扣除退款 ${yen(M.refund)}</p>` : '';
 
@@ -1201,7 +1204,14 @@ function viewTxns(){
   const cnt = { all:L.length, ok:L.filter(x=>x.st==='ok').length, dup:L.filter(x=>x.st==='dup').length, xfer:L.filter(x=>x.st==='xfer').length, sus:L.filter(x=>x.sus&&x.st==='ok').length, other:L.filter(x=>x.st==='ok'&&x.o&&x.c==='other').length };
   const chip = (k,label) => `<button class="chip ${S.filter===k?'on':''}" data-filter="${k}">${label} <span class="num">${cnt[k]}</span></button>`;
   const srcOpts = `<option value="">全部来源</option>` + S.sources.map(s=>`<option value="${esc(s.id)}" ${S.srcFilter===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
-  return `<div class="toolbar">${chip('all','全部')}${chip('ok','计入')}${chip('dup','重复')}${chip('xfer','转账/还款')}${chip('sus','待确认')}${chip('other','未分类')}
+  let catBar = '';
+  if (S.catFilter) {
+    const CV = conv();
+    const CL = L.filter(x=>x.c===S.catFilter && x.st==='ok');
+    const sum = CL.reduce((a,x)=>a + (x.o ? 1 : -1) * (CV(x)||0), 0);
+    catBar = `<div class="catbar"><span>${fmtMonth(S.month)} · <b>${esc(CAT_NAME[S.catFilter]||S.catFilter)}</b> · 共 <b class="num">${CL.length}</b> 笔 · 合计 <b class="num">${yen(sum)}</b></span><span class="acts"><button class="btn sm" data-go="overview">‹ 回概览</button><button class="btn sm" data-act="clear-cat">看全部明细</button></span></div>`;
+  }
+  return catBar + `<div class="toolbar">${chip('all','全部')}${chip('ok','计入')}${chip('dup','重复')}${chip('xfer','转账/还款')}${chip('sus','待确认')}${chip('other','未分类')}
     <input type="search" id="q" placeholder="搜索商户或备注" value="${esc(S.q)}" aria-label="搜索">
     <select id="srcFilter" aria-label="来源">${srcOpts}</select></div>
     <div class="tablewrap"><table><thead><tr><th>日期</th><th>内容</th><th>来源</th><th>分类</th><th class="r">金额</th><th class="r">状态</th></tr></thead><tbody id="txBody"></tbody></table></div>
@@ -1217,6 +1227,7 @@ function renderTxRows(){
   else if (S.filter==='sus') L = L.filter(x=>x.sus && x.st==='ok');
   else if (S.filter==='other') L = L.filter(x=>x.st==='ok' && x.o && x.c==='other');
   if (S.srcFilter) L = L.filter(x=>x.s===S.srcFilter);
+  if (S.catFilter) L = L.filter(x=>x.c===S.catFilter && x.st==='ok');
   if (q) L = L.filter(x=>norm(x.t).includes(q) || norm(srcName(x.s)).includes(q));
   L.sort((a,b)=> a.d===b.d ? (a.a-b.a) : (a.d<b.d?1:-1));
   if (S.filter==='sus') L.sort((a,b)=> (a.a-b.a) || (a.d<b.d?-1:1));
@@ -1569,7 +1580,8 @@ function arm(btn, key, label){ if (armed[key] && Date.now()-armed[key] < 4000) {
 document.addEventListener('click', e=>{
   const tab = e.target.closest('.tab'); if (tab) { go(tab.dataset.v); return; }
   const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
-  const fl = e.target.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; if (S.view!=='txns') go('txns'); else render(); return; }
+  const cg = e.target.closest('[data-catgo]'); if (cg) { S.catFilter = cg.dataset.catgo; S.filter = 'ok'; S.q = ''; S.srcFilter = ''; go('txns'); return; }
+  const fl = e.target.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; S.catFilter = ''; if (S.view!=='txns') go('txns'); else render(); return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
   const x = id ? S.txns.find(t=>t.i===id) : null;
@@ -1598,6 +1610,7 @@ document.addEventListener('click', e=>{
     case 'sync-now': syncNow().then(()=>render()); break;
     case 'sync-unlock': { const p = $('#syncPassOnly').value; if (!p) break; Sync.pass = p; if ($('#syncRememberOnly').checked) { Sync.cfg.pass = p; saveCfg(); } syncNow().then(()=>render()); break; }
     case 'sync-off': if (arm(b,'syncoff','再点一次：这台设备停止同步')) { disconnectSync(); render(); } break;
+    case 'clear-cat': S.catFilter = ''; S.filter = 'all'; render(); break;
     case 'goto-rates': go('plan'); setTimeout(()=>{ const el = $('#rates'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'goto-sync': go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'wipe': if (arm(b,'wipe','再点一次：真的全部清空')) { S.demo=false; for (const t of S.txns) bury('t', t.i); for (const x of S.sources) bury('s', x.id); for (const x of S.settings.imports) bury('i', x.id); S.sources=[]; S.txns=[]; S.settings={budgets:{},fixed:[],learned:{},imports:[],su:0}; markDirty([], true); toast(Sync.cfg?'已清空，GitHub 上的数据也会同步清空':'已清空'); render(); } break;
