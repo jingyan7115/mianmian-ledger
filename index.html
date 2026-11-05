@@ -1254,7 +1254,8 @@ function viewImport(){
   const typeOpts = SRC_TYPES.map(([k,n])=>`<option value="${k}" ${S.newSrc.type===k?'selected':''}>${n}</option>`).join('');
   let pending = '';
   const P = S.pending;
-  if (P) pending = csvPreview(P);
+  if (P) pending = P.kind === 'pdfpass' ? `<div class="card"><h2>③ 「${esc(P.file)}」有密码</h2><p class="h2sub">${P.wrong ? '密码不对，再试一次。' : '这个 PDF 设了打开密码。密码只在你的浏览器里用来打开文件，不会保存。'}</p>
+      <div class="fields"><label class="field">PDF 密码<input type="password" id="pdfPass" autocomplete="off"></label><button class="btn pri" data-act="pdf-pass">打开</button><button class="btn" data-act="cancel-pending">跳过这个文件</button></div></div>` : csvPreview(P);
   const R = S.results || [];
   const batchRes = (!P && R.length > 1) ? `<div class="card"><h2>这一批导入完成：${R.length} 个文件</h2><div class="kv" style="margin-top:8px">
       <span>新增 <b class="num">${R.reduce((a,r)=>a+r.added,0)}</b> 笔</span><span>之前导入过，已跳过 <b class="num">${R.reduce((a,r)=>a+r.skipped,0)}</b></span>
@@ -1275,9 +1276,9 @@ function viewImport(){
         <label class="field">类型<select id="newSrcType">${typeOpts}</select></label>
         <label class="field">币种<select id="newSrcCur">${CURS.map(([k,n])=>`<option value="${k}" ${(S.newSrc.cur||'JPY')===k?'selected':''}>${n}</option>`).join('')}</select></label>`:''}
       </div></div>
-    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 导出的 Excel 或 CSV 都可以。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
-      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,text/csv" multiple>
-        <div><div class="big">点这里选文件，或拖进来（可以一次选很多个）</div><div class="small">Excel（.xlsx / .xls）或 CSV（UTF-8 / Shift_JIS 都行）</div></div></label>
+    <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 导出的 Excel、CSV、PDF 都可以。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
+      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.pdf,text/csv,application/pdf" multiple>
+        <div><div class="big">点这里选文件，或拖进来（可以一次选很多个）</div><div class="small">Excel（.xlsx / .xls）、CSV（UTF-8 / Shift_JIS / GBK）、带文字的 PDF</div></div></label>
     </div>
     ${pending}${res}${batchRes}
     ${hist?`<div class="card"><h2>导入记录</h2><p class="h2sub">传错了可以整批撤销</p><div class="list">${hist}</div></div>`:''}
@@ -1296,7 +1297,7 @@ function csvPreview(P){
   const srcWarn = S.srcGuessed ? '' : (S.importSrc && S.importSrc!=='new')
     ? `<div class="alert warn" style="margin:0 0 10px"><span>看不出这份是哪家的账单，现在会记到「${esc(srcName(S.importSrc))}」。不对的话在上面 ① 里换一下。</span></div>`
     : `<div class="alert warn" style="margin:0 0 10px"><span>看不出这份是哪家的账单，请在上面 ① 里选一个来源，或者新建一个（比如「ゆうちょ銀行」）。</span></div>`;
-  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}${prog}</h2>${srcWarn}<p class="h2sub">${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
+  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}${prog}</h2>${srcWarn}<p class="h2sub">${P.pdf?'PDF 里的表格是按文字位置还原出来的，请特别留意日期和金额对不对。':''}${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
     <div class="fields">
       ${P.sheets && P.sheets.length > 1 ? `<label class="field">工作表<select id="sheetSel">${P.sheets.map((sh,i)=>`<option value="${i}" ${P.sheet===i?'selected':''}>${esc(sh.name)}</option>`).join('')}</select></label>` : ''}
       <label class="field">日期列<select data-map="dateCol">${colOpts(L.dateCol)}</select></label>
@@ -1342,8 +1343,8 @@ function currentSrcType(){
   return S.newSrc.type;
 }
 async function handleFiles(files){
-  const ok = files.filter(f=>/\.(csv|tsv|txt|xlsx|xls|xlsm)$/i.test(f.name));
-  if (ok.length < files.length) toast('有 ' + (files.length-ok.length) + ' 个文件不是 Excel 或 CSV，已跳过。');
+  const ok = files.filter(f=>/\.(csv|tsv|txt|xlsx|xls|xlsm|pdf)$/i.test(f.name));
+  if (ok.length < files.length) toast('有 ' + (files.length-ok.length) + ' 个文件不是 Excel、CSV 或 PDF，已跳过。');
   if (!ok.length) return;
   S.queue = ok.slice(1); S.batch = { total: ok.length, done: 0, added: 0, skipped: 0, dup: 0, xfer: 0, sus: 0 };
   S.results = [];
@@ -1353,18 +1354,34 @@ async function nextInQueue(){
   if (S.queue && S.queue.length) { const f = S.queue.shift(); await openFile(f); return true; }
   return false;
 }
-async function openFile(f){
+function failFile(msg){ toast(msg); if (S.queue && S.queue.length) setTimeout(nextInQueue, 600); else { S.pending = null; render(); } }
+async function openFile(f, pdfPass){
   if (!f) return;
   S.lastResult = null;
   const lower = f.name.toLowerCase();
+  if (/\.pdf$/.test(lower) || f.type === 'application/pdf') {
+    let rows;
+    try { rows = await readPdfRows(f, pdfPass); }
+    catch(e){
+      if (e && e.name === 'PasswordException') { S.pending = { kind:'pdfpass', file:f.name, blob:f, wrong: !!pdfPass }; render(); return; }
+      return failFile('这个 PDF 打不开：' + ((e && e.message) || '未知原因'));
+    }
+    if (!rows.length) return failFile('「' + f.name + '」里没有可以读取的文字，可能是扫描出来的图片。请在网银或 App 里改下载 CSV / Excel，或者带文字的 PDF。');
+    autoPickSource(f.name, rows.slice(0,40).map(r=>r.join(' ')).join('\n'));
+    S.pending = { kind:'csv', file:f.name, sheets:[{ name:'PDF', rows }], sheet:0, flip:false, pdf:true };
+    useSheet(0);
+    render();
+    const elp = document.querySelector('.steps .card:nth-child(3)'); if (elp) elp.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
   const isCsv = /\.(csv|tsv|txt)$/.test(lower) || f.type === 'text/csv';
   const isXls = /\.(xlsx|xls|xlsm)$/.test(lower);
   let head = '';
   if (isXls) {
     let sheets;
     try { sheets = await readWorkbook(f); }
-    catch(e){ toast('这个 Excel 文件打不开：' + (e && e.message || '可能有密码保护') + '。可以在 Excel 里另存为 CSV 再试。'); return; }
-    if (!sheets.length) { toast('这个 Excel 里没有内容'); return; }
+    catch(e){ return failFile('这个 Excel 文件打不开：' + (e && e.message || '可能有密码保护') + '。可以在 Excel 里另存为 CSV 再试。'); }
+    if (!sheets.length) return failFile('这个 Excel 里没有内容');
     const pick = bestSheet(sheets);
     autoPickSource(f.name, sheets[pick].rows.slice(0,40).map(r=>r.join(' ')).join('\n'));
     S.pending = { kind:'csv', file:f.name, sheets, sheet:pick, flip:false };
@@ -1384,11 +1401,78 @@ async function openFile(f){
     S.pending = { kind:'csv', file:f.name, rows, layout:L, flip:false, guessed };
     reparse();
   } else {
-    toast('这里能读 Excel 和 CSV，账单只在你自己的浏览器里处理。PDF 或截图请回到网银或 App，改选 Excel 或 CSV 下载。');
-    return;
+    return failFile('这里能读 Excel、CSV 和带文字的 PDF。截图请回到网银或 App，改下载这几种格式。');
   }
   render();
   const el = document.querySelector('.steps .card:nth-child(3)'); if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
+// ---- PDF: read text positions locally with pdf.js, rebuild the table ----
+let pdfReady = null;
+function loadPdfJs(){
+  if (!pdfReady) pdfReady = new Promise((res, rej)=>{ const s = document.createElement('script'); s.src = 'vendor/pdfjs/pdf.min.js'; s.onload = ()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js'; res(window.pdfjsLib); }; s.onerror = ()=>{ pdfReady = null; rej(new Error('读取 PDF 的组件没加载出来，检查一下网络')); }; document.head.appendChild(s); });
+  return pdfReady;
+}
+async function readPdfRows(file, password){
+  const lib = await loadPdfJs();
+  const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), password: password || undefined, cMapUrl: 'vendor/pdfjs/cmaps/', cMapPacked: true, isEvalSupported: false }).promise;
+  const lines = [];
+  for (let p = 1; p <= Math.min(doc.numPages, 80); p++){
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    const items = tc.items.filter(it => it.str && it.str.trim()).map(it => {
+      const h = Math.abs(it.transform[3]) || Math.abs(it.transform[0]) || 10;
+      return { x: it.transform[4], y: it.transform[5], x2: it.transform[4] + (it.width || it.str.length * h * 0.6), h, s: it.str };
+    });
+    items.sort((a,b) => (b.y - a.y) || (a.x - b.x));
+    const pl = [];
+    for (const it of items){
+      const L = pl[pl.length-1];
+      if (L && Math.abs(L.y - it.y) <= Math.max(2, Math.min(L.h, it.h) * 0.45)) L.items.push(it);
+      else pl.push({ y: it.y, h: it.h, items: [it] });
+    }
+    for (const L of pl){
+      L.items.sort((a,b)=>a.x-b.x);
+      const cells = [];
+      for (const it of L.items){
+        const c = cells[cells.length-1];
+        if (c && it.x - c.x2 <= Math.max(3, it.h * 0.7)) { c.s += (it.x - c.x2 > it.h * 0.25 ? ' ' : '') + it.s; c.x2 = Math.max(c.x2, it.x2); }
+        else cells.push({ x: it.x, x2: it.x2, s: it.s });
+      }
+      lines.push(cells.map(c => ({ ...c, s: c.s.trim() })).filter(c => c.s));
+    }
+  }
+  return pdfLinesToRows(lines);
+}
+function pdfLinesToRows(lines){
+  if (!lines.length) return [];
+  let hi = -1, best = 0;
+  for (let i = 0; i < Math.min(lines.length, 120); i++){
+    const hdr = lines[i].map(c => norm(c.s));
+    let sc = 0;
+    for (const key of ['date','desc','amt','out','inn']) if (hdr.some(h => h && h.length < 20 && HKN[key].some(k => h.includes(k)))) sc++;
+    if (sc > best) { best = sc; hi = i; }
+  }
+  let anchors;
+  if (best >= 2) anchors = lines[hi].map(c => ({ l: c.x, r: c.x2 }));
+  else {
+    const xs = lines.flatMap(l => l.map(c => c.x)).sort((a,b)=>a-b);
+    anchors = [];
+    for (const x of xs){ const a = anchors[anchors.length-1]; if (a && x - a.l <= 12) { a.n++; } else anchors.push({ l:x, r:x+12, n:1 }); }
+    anchors = anchors.filter(a => a.n >= Math.max(2, lines.length * 0.08));
+    if (!anchors.length) return [];
+  }
+  const rows = [];
+  for (const line of lines){
+    const row = new Array(anchors.length).fill('');
+    for (const c of line){
+      let k = -1, bestOv = 0;
+      anchors.forEach((a, j) => { const ov = Math.min(c.x2, a.r) - Math.max(c.x, a.l); if (ov > bestOv) { bestOv = ov; k = j; } });
+      if (k < 0) { let bd = Infinity; const cx = (c.x + c.x2) / 2; anchors.forEach((a, j) => { const d = Math.abs(cx - (a.l + a.r) / 2); if (d < bd) { bd = d; k = j; } }); }
+      row[k] = row[k] ? row[k] + ' ' + c.s : c.s;
+    }
+    if (row.some(v => v !== '')) rows.push(row);
+  }
+  return rows;
 }
 let xlsxReady = null;
 function loadXlsx(){
@@ -1593,6 +1677,7 @@ document.addEventListener('click', e=>{
     case 'set-xfer': if (x){ x.m=1; x.st='xfer'; x.w='你标记为转账/还款'; runAnalyze(); touch([x]); renderTxRows(); } break;
     case 'sus-yes': if (x){ const o = S.txns.find(t=>t.i===x.sus); x.m=1; x.st='dup'; x.p = o?o.i:undefined; x.w='你确认是重复'; if (o){ o.m=1; o.st='ok'; o.w='你确认过：计入'; } runAnalyze(); touch([x,o]); renderTxRows(); } break;
     case 'sus-no': if (x){ const o = S.txns.find(t=>t.i===x.sus); x.m=1; x.st='ok'; x.w='你确认过：不是重复'; if (o){ o.m=1; o.st='ok'; o.w='你确认过：不是重复'; } runAnalyze(); touch([x,o]); renderTxRows(); } break;
+    case 'pdf-pass': { const P = S.pending; const pw = $('#pdfPass').value; if (P && pw) openFile(P.blob, pw); break; }
     case 'cancel-pending': S.pending = null; if (S.queue && S.queue.length) { toast('已跳过这个文件'); nextInQueue(); } else render(); break;
     case 'confirm-import': confirmImport(); break;
     case 'undo-import': if (arm(b,'undo'+id,'再点一次确认撤销')) undoImport(id); break;
