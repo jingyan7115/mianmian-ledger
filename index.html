@@ -825,7 +825,7 @@ function markDirty(months, settings){
   if (S.demo) return;
   if (settings) S.settings.su = Date.now();
   saveLocal();
-  if (Sync.cfg && Sync.pass) { Sync.dirty = true; setSave('', '待同步…'); clearTimeout(Sync.timer); Sync.timer = setTimeout(()=>syncNow(), 2500); }
+  if (Sync.cfg && Sync.pass) { Sync.dirty = true; setSave('', '待同步…'); clearTimeout(Sync.timer); Sync.timer = setTimeout(()=>syncNow(), 15000); }
   else pillIdle();
 }
 
@@ -1036,7 +1036,11 @@ async function initStore(){
   render(); pillIdle();
   if (Sync.cfg && Sync.pass) { const ok = await syncNow(); if (ok) { S.month = latestMonth(); render(); } }
 }
-document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && Sync.cfg && Sync.pass && Date.now() - Sync.lastPull > 20000) syncNow(); });
+document.addEventListener('visibilitychange', ()=>{
+  if (!Sync.cfg || !Sync.pass) return;
+  if (document.visibilityState === 'hidden' && Sync.dirty) { clearTimeout(Sync.timer); syncNow(); }
+  if (document.visibilityState === 'visible' && Date.now() - Sync.lastPull > 20000) syncNow();
+});
 window.addEventListener('online', ()=>{ if (Sync.cfg && Sync.pass) syncNow(); });
 
 function latestMonth(){
