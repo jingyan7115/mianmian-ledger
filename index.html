@@ -411,8 +411,20 @@ function hashList(list, srcId){
 function cleanDesc(t){
   let n = norm(t);
   for (const [a,b] of ALIASES) n = n.split(a).join(b);
-  for (const [,,re] of PLATFORMS) n = n.replace(new RegExp(re.source,'g'),'');
+  for (const re of PLAT_G) n = n.replace(re,'');
   return n.replace(NOISE,'').replace(/[0-9]+/g,'');
+}
+const PLAT_G = PLATFORMS.map(([,,re])=>new RegExp(re.source,'g'));
+function simClean(x, y){
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if ((x.length>=3 && y.includes(x)) || (y.length>=3 && x.includes(y))) return 0.8;
+  let inter = 0, A = new Set(), B = new Set();
+  for (let i=0;i<x.length-1;i++) A.add(x.slice(i,i+2));
+  for (let i=0;i<y.length-1;i++) B.add(y.slice(i,i+2));
+  if (!A.size || !B.size) return 0;
+  for (const g of A) if (B.has(g)) inter++;
+  return inter / (A.size + B.size - inter);
 }
 function sim(a,b){
   const x = cleanDesc(a), y = cleanDesc(b);
@@ -439,22 +451,32 @@ function analyze(txns, sources, learned){
   const walletCovered = (p, d) => sources.find(s => s.type==='wallet' && platformOf(norm(s.name))===p && cov[s.id] && cov[s.id].min <= addDays(d,3) && cov[s.id].max >= addDays(d,-3));
   const cardCovered = (d) => sources.find(s => s.type==='card' && cov[s.id] && cov[s.id].max >= addDays(d,-60) && cov[s.id].min <= d);
   const free = x => !x.m && x.st === 'ok';
+  const DN = new Map(), CL = new Map(), NN = new Map();
+  for (const x of txns){ DN.set(x.i, Date.parse(x.d+'T00:00:00Z')/86400000); }
+  const dn = x => DN.get(x.i);
+  const nn = x => { let v = NN.get(x.i); if (v === undefined) { v = norm(x.t); NN.set(x.i, v); } return v; };
+  const cl = x => { let v = CL.get(x.i); if (v === undefined) { v = cleanDesc(x.t); CL.set(x.i, v); } return v; };
 
   // 1) transfers between own accounts (paired)
   const byAmt = {};
   for (const x of txns) (byAmt[x.a] || (byAmt[x.a] = [])).push(x);
   for (const group of Object.values(byAmt)){
     if (group.length < 2) continue;
-    const outs = group.filter(x=>x.o && free(x)), ins = group.filter(x=>!x.o && free(x));
+    const outs = group.filter(x=>x.o && free(x)), ins = group.filter(x=>!x.o && free(x)).sort((a,b)=>dn(a)-dn(b));
+    if (!outs.length || !ins.length) continue;
     const pairs = [];
-    for (const x of outs) for (const y of ins){
+    for (const x of outs) {
+      let lo = 0, hi = ins.length; const t0 = dn(x) - 3;
+      while (lo < hi) { const mid = (lo+hi)>>1; if (dn(ins[mid]) < t0) lo = mid+1; else hi = mid; }
+      for (let k = lo; k < ins.length && dn(ins[k]) <= dn(x) + 3; k++) {
+      const y = ins[k];
       if (x.s === y.s) continue;
-      const dd = Math.abs(dayDiff(x.d, y.d)); if (dd > 3) continue;
-      const nx = norm(x.t), ny = norm(y.t);
+      const dd = Math.abs(dn(x) - dn(y));
+      const nx = nn(x), ny = nn(y);
       const yWallet = typeOf(y) === 'wallet';
       const ok = STRONG_OUT.test(nx) || STRONG_IN.test(ny) || (yWallet && platformOf(nx) && platformOf(nx) === platformOf(norm(S[y.s].name)));
       if (ok) pairs.push([dd, x, y]);
-    }
+    } }
     pairs.sort((a,b)=>a[0]-b[0]);
     for (const [,x,y] of pairs){
       if (!free(x) || !free(y)) continue;
@@ -492,20 +514,21 @@ function analyze(txns, sources, learned){
   const groups = {};
   for (const x of txns) if (free(x)) { const k = x.o + '|' + x.a; (groups[k] || (groups[k] = [])).push(x); }
   const order = new Map(txns.map((x,k)=>[x.i,k]));
-  const score = x => (platformOf(norm(x.t)) ? 0 : 100) + (TYPE_PRI[typeOf(x)]||1)*10 + Math.min(cleanDesc(x.t).length, 9);
+  const score = x => (platformOf(nn(x)) ? 0 : 100) + (TYPE_PRI[typeOf(x)]||1)*10 + Math.min(cl(x).length, 9);
   for (const g of Object.values(groups)){
     if (g.length < 2) continue;
+    g.sort((a,b)=>dn(a)-dn(b));
     const cands = [];
-    for (let i=0;i<g.length;i++) for (let j=i+1;j<g.length;j++){
+    for (let i=0;i<g.length;i++) for (let j=i+1;j<g.length && dn(g[j]) - dn(g[i]) <= 3;j++){
       const x = g[i], y = g[j];
-      const dd = Math.abs(dayDiff(x.d, y.d));
-      const s = sim(x.t, y.t);
+      const dd = dn(y) - dn(x);
+      if (x.s === y.s && dd > 0) continue;
+      const s = simClean(cl(x), cl(y));
       if (x.s === y.s) {
-        if (x.f && y.f && x.f !== y.f && dd === 0 && s >= 0.5) cands.push({x,y,dd,s,auto:true,same:true});
+        if (x.f && y.f && x.f !== y.f && s >= 0.5) cands.push({x,y,dd,s,auto:true,same:true});
         continue;
       }
-      if (dd > 3) continue;
-      const plat = !!(platformOf(norm(x.t)) || platformOf(norm(y.t)));
+      const plat = !!(platformOf(nn(x)) || platformOf(nn(y)));
       const auto = plat || s >= 0.34 || (s >= 0.2 && dd === 0);
       cands.push({x,y,dd,s,auto,same:false});
     }
@@ -575,7 +598,7 @@ const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.
 const S = {
   sources: [], txns: [], del: {}, settings: { budgets:{}, fixed:[], learned:{}, imports:[], su:0 },
   demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '',
-  importSrc: '', newSrc: { name:'', type:'card' }, pending: null, lastResult: null, busy: false
+  importSrc: '', newSrc: { name:'', type:'card' }, pending: null, lastResult: null, busy: false, queue: [], batch: null, results: [], srcGuessed: false
 };
 
 // ---------- storage: this device, plus optional encrypted sync to a private GitHub repo ----------
@@ -1024,7 +1047,13 @@ function viewImport(){
   let pending = '';
   const P = S.pending;
   if (P) pending = csvPreview(P);
-  const res = S.lastResult ? `<div class="card"><h2>导入完成：${esc(S.lastResult.file)}</h2><div class="kv" style="margin-top:8px">
+  const R = S.results || [];
+  const batchRes = (!P && R.length > 1) ? `<div class="card"><h2>这一批导入完成：${R.length} 个文件</h2><div class="kv" style="margin-top:8px">
+      <span>新增 <b class="num">${R.reduce((a,r)=>a+r.added,0)}</b> 笔</span><span>之前导入过，已跳过 <b class="num">${R.reduce((a,r)=>a+r.skipped,0)}</b></span>
+      <span>判定为重复 <b class="num">${R.reduce((a,r)=>a+r.dup,0)}</b></span><span>转账/还款/充值 <b class="num">${R.reduce((a,r)=>a+r.xfer,0)}</b></span><span>待你确认 <b class="num">${R.reduce((a,r)=>a+r.sus,0)}</b></span></div>
+      <div class="list" style="margin-top:10px">${R.map(r=>`<div class="li"><span>${esc(r.file)} <span class="muted small">→ ${esc(r.src)}</span></span><span class="small muted">新增 ${r.added} · 跳过 ${r.skipped}</span></div>`).join('')}</div>
+      <div class="toolbar" style="margin:12px 0 0"><button class="btn pri" data-go="overview">看概览</button><button class="btn" data-go="txns">看明细</button></div></div>` : '';
+  const res = (S.lastResult && !(R.length > 1)) ? `<div class="card"><h2>导入完成：${esc(S.lastResult.file)}</h2><div class="kv" style="margin-top:8px">
       <span>读到 <b class="num">${S.lastResult.read}</b> 笔</span><span>新增 <b class="num">${S.lastResult.added}</b></span>
       <span>之前导入过，已跳过 <b class="num">${S.lastResult.skipped}</b></span><span>判定为重复 <b class="num">${S.lastResult.dup}</b></span>
       <span>转账/还款/充值 <b class="num">${S.lastResult.xfer}</b></span><span>待你确认 <b class="num">${S.lastResult.sus}</b></span></div>
@@ -1039,9 +1068,9 @@ function viewImport(){
       </div></div>
     <div class="card"><h2>② 选择账单文件</h2><p class="h2sub">网银、信用卡网站和 PayPay 导出的 Excel 或 CSV 都可以。文件只在你这台设备的浏览器里解析，不会上传原文件；开了同步也只上传加密后的数据。</p>
       <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,text/csv" multiple>
-        <div><div class="big">点这里选文件，或拖进来</div><div class="small">Excel（.xlsx / .xls）或 CSV（UTF-8 / Shift_JIS 都行）</div></div></label>
+        <div><div class="big">点这里选文件，或拖进来（可以一次选很多个）</div><div class="small">Excel（.xlsx / .xls）或 CSV（UTF-8 / Shift_JIS 都行）</div></div></label>
     </div>
-    ${pending}${res}
+    ${pending}${res}${batchRes}
     ${hist?`<div class="card"><h2>导入记录</h2><p class="h2sub">传错了可以整批撤销</p><div class="list">${hist}</div></div>`:''}
   </div>`;
 }
@@ -1052,7 +1081,12 @@ function csvPreview(P){
   const parsed = P.parsed || [];
   const rows = parsed.slice(0,8).map(x=>`<tr><td class="num">${x.d}</td><td>${esc(x.t)}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${yen(x.a)}</td></tr>`).join('');
   const outSum = parsed.filter(x=>x.o).reduce((s,x)=>s+x.a,0), inSum = parsed.filter(x=>!x.o).reduce((s,x)=>s+x.a,0);
-  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}</h2><p class="h2sub">${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
+  const qn = (S.queue||[]).length, tot = S.batch ? S.batch.total : 1;
+  const prog = tot > 1 ? `<span class="pill none" style="margin-left:6px">第 ${tot-qn} / ${tot} 个</span>` : '';
+  const srcWarn = S.srcGuessed ? '' : (S.importSrc && S.importSrc!=='new')
+    ? `<div class="alert warn" style="margin:0 0 10px"><span>看不出这份是哪家的账单，现在会记到「${esc(srcName(S.importSrc))}」。不对的话在上面 ① 里换一下。</span></div>`
+    : `<div class="alert warn" style="margin:0 0 10px"><span>看不出这份是哪家的账单，请在上面 ① 里选一个来源，或者新建一个（比如「ゆうちょ銀行」）。</span></div>`;
+  return `<div class="card"><h2>③ 核对一下识别结果：${esc(P.file)}${prog}</h2>${srcWarn}<p class="h2sub">${P.guessed===false?'这份 CSV 的格式没自动认出来，请在下面选一下哪列是日期、内容、金额。':'我自动认了列。前几行看着对就直接导入；不对就改下面的选项。'}</p>
     <div class="fields">
       ${P.sheets && P.sheets.length > 1 ? `<label class="field">工作表<select id="sheetSel">${P.sheets.map((sh,i)=>`<option value="${i}" ${P.sheet===i?'selected':''}>${esc(sh.name)}</option>`).join('')}</select></label>` : ''}
       <label class="field">日期列<select data-map="dateCol">${colOpts(L.dateCol)}</select></label>
@@ -1066,11 +1100,17 @@ function csvPreview(P){
     <div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>日期</th><th>内容</th><th class="r">金额</th></tr></thead><tbody>${rows || '<tr><td colspan="3" class="empty">没识别出交易，换一下上面的列试试</td></tr>'}</tbody></table></div>
     <div class="toolbar" style="margin:12px 0 0;justify-content:space-between">
       <span class="small muted">共 <b class="num">${parsed.length}</b> 笔 · 支出 <span class="num">${yen(outSum)}</span> · 收入 <span class="num">${yen(inSum)}</span>${P.skipped?` · 跳过 ${P.skipped} 行（表头、合计等）`:''}</span>
-      <span class="acts"><button class="btn" data-act="cancel-pending">取消</button><button class="btn pri" data-act="confirm-import" ${parsed.length?'':'disabled'}>导入这 ${parsed.length} 笔</button></span>
+      <span class="acts"><button class="btn" data-act="cancel-pending">取消</button><button class="btn pri" data-act="confirm-import" ${parsed.length?'':'disabled'}>导入这 ${parsed.length} 笔${qn?'，看下一个':''}</button></span>
     </div></div>`;
 }
 function guessSource(name, head){
-  const n = norm(name + ' ' + (head||'').slice(0,400));
+  const fromName = guessFrom(norm(name)); if (fromName) return fromName;
+  const h = norm((head||'').slice(0,600));
+  if (h.includes('取引内容') && h.includes('取引先') && h.includes('取引方法')) return { name:'PayPay', type:'wallet' };
+  const title = norm(String(head||'').split(/\r?\n/).slice(0,2).join(' '));
+  return guessFrom(title);
+}
+function guessFrom(n){
   const G = [[/PAYPAYカード|PAYPAYCARD/,'PayPayカード','card'],[/楽天カード|ENAVI|RAKUTENCARD/,'楽天カード','card'],[/三井住友カード|VPASS|SMBCCARD/,'三井住友カード','card'],[/JCB/,'JCBカード','card'],[/イオンカード|AEONCARD/,'イオンカード','card'],[/エポス|EPOS/,'エポスカード','card'],[/セゾン|SAISON/,'セゾンカード','card'],[/PAYPAY/,'PayPay','wallet'],[/SUICA/,'Suica','wallet'],[/楽天銀行/,'楽天銀行','bank'],[/三井住友銀行|SMBC/,'三井住友銀行','bank'],[/三菱UFJ|MUFG/,'三菱UFJ銀行','bank'],[/みずほ|MIZUHO/,'みずほ銀行','bank'],[/ゆうちょ|JAPANPOST|JPBANK/,'ゆうちょ銀行','bank'],[/住信SBI|NEOBANK/,'住信SBIネット銀行','bank'],[/MONEYFORWARD|マネーフォワード|ZAIM|MONEYTREE/,'记账App导出','app']];
   for (const [re,nm,type] of G) if (re.test(n)) return { name:nm, type };
   return null;
@@ -1080,8 +1120,19 @@ function currentSrcType(){
   return S.newSrc.type;
 }
 async function handleFiles(files){
-  const f = files[0]; if (!f) return;
-  if (files.length > 1) toast('一次处理一个文件，先导入「' + f.name + '」。');
+  const ok = files.filter(f=>/\.(csv|tsv|txt|xlsx|xls|xlsm)$/i.test(f.name));
+  if (ok.length < files.length) toast('有 ' + (files.length-ok.length) + ' 个文件不是 Excel 或 CSV，已跳过。');
+  if (!ok.length) return;
+  S.queue = ok.slice(1); S.batch = { total: ok.length, done: 0, added: 0, skipped: 0, dup: 0, xfer: 0, sus: 0 };
+  S.results = [];
+  await openFile(ok[0]);
+}
+async function nextInQueue(){
+  if (S.queue && S.queue.length) { const f = S.queue.shift(); await openFile(f); return true; }
+  return false;
+}
+async function openFile(f){
+  if (!f) return;
   S.lastResult = null;
   const lower = f.name.toLowerCase();
   const isCsv = /\.(csv|tsv|txt)$/.test(lower) || f.type === 'text/csv';
@@ -1093,7 +1144,7 @@ async function handleFiles(files){
     catch(e){ toast('这个 Excel 文件打不开：' + (e && e.message || '可能有密码保护') + '。可以在 Excel 里另存为 CSV 再试。'); return; }
     if (!sheets.length) { toast('这个 Excel 里没有内容'); return; }
     const pick = bestSheet(sheets);
-    autoPickSource(f.name, sheets[pick].rows.slice(0,8).map(r=>r.join(' ')).join(' '));
+    autoPickSource(f.name, sheets[pick].rows.slice(0,8).map(r=>r.join(' ')).join('\n'));
     S.pending = { kind:'csv', file:f.name, sheets, sheet:pick, flip:false };
     useSheet(pick);
     render();
@@ -1162,10 +1213,11 @@ function useSheet(i){
   reparse();
 }
 function autoPickSource(fileName, head){
-  if (S.importSrc && S.importSrc!=='new') return;
-  const g = guessSource(fileName, head); if (!g) return;
+  const g = guessSource(fileName, head);
+  S.srcGuessed = !!g;
+  if (!g) { if (!S.importSrc || S.importSrc==='new') { S.importSrc = 'new'; S.newSrc = { name:'', type:S.newSrc.type }; } return; }
   const ex = S.sources.find(s=>norm(s.name)===norm(g.name));
-  if (ex) S.importSrc = ex.id; else { S.importSrc = 'new'; if (!S.newSrc.name) S.newSrc = { name:g.name, type:g.type }; }
+  if (ex) S.importSrc = ex.id; else { S.importSrc = 'new'; S.newSrc = { name:g.name, type:g.type }; }
 }
 function reparse(){
   const P = S.pending; if (!P || P.kind!=='csv') return;
@@ -1205,7 +1257,10 @@ function confirmImport(){
     const months = [...new Set(F.map(x=>ymOf(x.d)))].sort();
     if (!months.includes(S.month)) S.month = months[months.length-1];
   }
+  S.results = (S.results || []).concat([{ ...S.lastResult, src: src.name }]);
   markDirty(new Set(S.txns.map(x=>ymOf(x.d))), true);
+  if (S.queue && S.queue.length) { S.lastResult = null; nextInQueue(); return; }
+  if (S.results.length > 1) S.month = latestMonth();
   render();
 }
 function undoImport(id){
@@ -1299,7 +1354,7 @@ document.addEventListener('click', e=>{
     case 'set-xfer': if (x){ x.m=1; x.st='xfer'; x.w='你标记为转账/还款'; runAnalyze(); touch([x]); renderTxRows(); } break;
     case 'sus-yes': if (x){ const o = S.txns.find(t=>t.i===x.sus); x.m=1; x.st='dup'; x.p = o?o.i:undefined; x.w='你确认是重复'; if (o){ o.m=1; o.st='ok'; o.w='你确认过：计入'; } runAnalyze(); touch([x,o]); renderTxRows(); } break;
     case 'sus-no': if (x){ const o = S.txns.find(t=>t.i===x.sus); x.m=1; x.st='ok'; x.w='你确认过：不是重复'; if (o){ o.m=1; o.st='ok'; o.w='你确认过：不是重复'; } runAnalyze(); touch([x,o]); renderTxRows(); } break;
-    case 'cancel-pending': S.pending = null; render(); break;
+    case 'cancel-pending': S.pending = null; if (S.queue && S.queue.length) { toast('已跳过这个文件'); nextInQueue(); } else render(); break;
     case 'confirm-import': confirmImport(); break;
     case 'undo-import': if (arm(b,'undo'+id,'再点一次确认撤销')) undoImport(id); break;
     case 'add-fixed': S.settings.fixed.push({ id:'f'+rid(), name:'', amt:0, cat:'sub', kw:'' }); markDirty([], true); render(); break;
