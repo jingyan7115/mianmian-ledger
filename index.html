@@ -105,6 +105,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-vis
 input[type=text],input[type=number],input[type=search],select,textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
 input[type=number]{width:110px}
 textarea{width:100%;min-height:120px;font-family:var(--font-n);font-size:12px}
+.tablewrap tfoot td{border-top:1px solid var(--line);border-bottom:0}
 .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -728,7 +729,7 @@ const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.
 
 const S = {
   sources: [], txns: [], del: {}, settings: { budgets:{}, fixed:[], learned:{}, imports:[], su:0 },
-  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '', catFilter: '', incomeView: false,
+  demo: false, month: nowYM(), view: 'overview', filter: 'all', q: '', srcFilter: '', catFilter: '', incomeView: false, year: null,
   importSrc: '', newSrc: { name:'', type:'card' }, pending: null, lastResult: null, busy: false, queue: [], batch: null, results: [], srcGuessed: false
 };
 
@@ -1111,7 +1112,7 @@ function viewOverview(){
   const budgetSpent = Object.keys(budgets).filter(k=>k!=='save').reduce((s,k)=>s+(M.byCat[k]||0),0);
   if (!M.count) {
     const syncHint = (!S.demo && !Sync.cfg) ? `<div class="alert info" style="margin-bottom:14px"><span>现在只保存在这台设备。要在别的设备上看到同样的账，先在这里设置同步。</span><button class="btn sm" data-act="goto-sync">设置同步</button></div>` : '';
-    return syncHint + `<div class="card"><h2>${fmtMonth(S.month)}还没有账单</h2><p class="muted small">去「上传账单」导入这个月的信用卡、银行、PayPay 明细。同一笔消费出现在多个账单里也没关系，我会自动去重。</p><button class="btn pri" data-go="import">上传账单</button></div>` + trendCard();
+    return syncHint + `<div class="card"><h2>${fmtMonth(S.month)}还没有账单</h2><p class="muted small">去「上传账单」导入这个月的信用卡、银行、PayPay 明细。同一笔消费出现在多个账单里也没关系，我会自动去重。</p><button class="btn pri" data-go="import">上传账单</button></div>` + trendCard() + yearCard();
   }
   const rate = M.income > 0 ? Math.round((M.income - M.expense) / M.income * 100) : null;
   const tiles = `
@@ -1156,7 +1157,7 @@ function viewOverview(){
       <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div></div>
       ${reconCard()}
     </div>
-  </div>` + trendCard();
+  </div>` + trendCard() + yearCard();
 }
 function reconCard(){
   const pays = S.txns.filter(x=>ymOf(x.d)===S.month && x.o && (x.c==='card' || (x.st==='xfer' && /信用卡还款/.test(x.w||''))));
@@ -1202,6 +1203,54 @@ function trendCard(){
   });
   return `<div class="card" style="margin-top:14px"><h2>近 6 个月</h2><p class="h2sub">收入和实际支出（已去重、去转账）</p><svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="近6个月收入与支出">${g}</svg><div class="legend"><span><i style="background:var(--good)"></i>收入</span><span><i style="background:var(--accent)"></i>实际支出</span><span>单位：日元</span></div>
     <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>月份</th><th class="r">收入</th><th class="r">实际支出</th><th class="r">结余</th></tr></thead><tbody>${data.filter(d=>d.n).map(d=>`<tr${d.ym===S.month?' style="font-weight:600"':''}><td>${fmtMonth(d.ym)}</td><td class="r num">${yen(d.inc)}</td><td class="r num">${yen(d.exp)}</td><td class="r num ${d.net>=0?'pos':'neg'}">${yen(d.net)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function yearCard(){
+  const Y = String(S.year || S.month.slice(0,4));
+  const CV = conv();
+  const months = Array.from({length:12}, (_,i)=> Y + '-' + pad(i+1));
+  const ms = months.map(ym => monthSummary(S.txns, ym, CV));
+  const withData = ms.filter(m=>m.count);
+  const yearsAvail = [...new Set(S.txns.map(x=>x.d.slice(0,4)))].sort();
+  const nav = `<span class="acts"><button class="iconbtn" data-act="year-prev" aria-label="上一年">‹</button><b style="font-family:var(--font-d);font-size:17px;min-width:70px;text-align:center">${Y}年</b><button class="iconbtn" data-act="year-next" aria-label="下一年">›</button></span>`;
+  if (!withData.length) return `<div class="card" id="year" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><h2>年度统计</h2><p class="h2sub" style="margin:0">年間（ねんかん）のまとめ</p></div>${nav}</div><div class="empty">${Y}年还没有账单${yearsAvail.length?'，有数据的年份：'+yearsAvail.join('、'):''}</div></div>`;
+  const sum = k => ms.reduce((a,m)=>a+(m[k]||0),0);
+  const inc = sum('income'), exp = sum('expense'), net = inc - exp, save = sum('save'), excl = sum('excludedAmt'), reimb = sum('reimb'), reimbIn = sum('reimbIn');
+  const n = withData.length, rate = inc > 0 ? Math.round(net/inc*100) : null;
+  const byCat = {};
+  for (const m of ms) for (const [k,v] of Object.entries(m.byCat)) byCat[k] = (byCat[k]||0) + v;
+  const cats = Object.entries(byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const maxC = Math.max(1, ...cats.map(c=>c[1]));
+  const catRows = cats.map(([k,v])=>`<div class="bar"><div class="row1"><span>${esc(CAT_NAME[k]||k)}</span><span class="amt num">${yen(v)} <span class="muted">· ${exp>0?Math.round(v/exp*100):0}% · 月均 ${yen(v/n)}</span></span></div><div class="track"><div class="fill" style="width:${(v/maxC*100).toFixed(1)}%"></div></div></div>`).join('');
+  const maxM = Math.max(1, ...ms.map(m=>Math.max(m.income, m.expense)));
+  const monthRows = ms.map((m,i)=> m.count ? `<tr><td><button class="catlink" data-gomonth="${months[i]}">${i+1}月 ›</button></td><td class="r num">${yen(m.income)}</td><td class="r num">${yen(m.expense)}</td><td class="r num ${m.net>=0?'pos':'neg'}">${yen(m.net)}</td><td style="width:28%"><div class="track" style="margin-top:7px"><div class="fill" style="width:${(m.expense/maxM*100).toFixed(1)}%"></div></div></td></tr>`
+    : `<tr><td class="muted">${i+1}月</td><td colspan="4" class="muted small">没有账单</td></tr>`).join('');
+  const mer = {};
+  for (const x of S.txns) {
+    if (x.d.slice(0,4) !== Y || x.st !== 'ok' || !x.o || x.c === 'save' || x.c === 'reimb') continue;
+    const v = CV(x); if (v == null) continue;
+    const key = x.c === 'cash' ? '__cash' : (cleanDesc(x.t) || norm(x.t)); if (!key) continue;
+    const label = x.c === 'cash' ? '现金取出（ATM）' : x.t;
+    const o = mer[key] || (mer[key] = { name: label, v: 0, n: 0, last: '' });
+    o.v += v; o.n++; if (x.d > o.last) { o.last = x.d; o.name = label; }
+  }
+  const top = Object.values(mer).sort((a,b)=>b.v-a.v).slice(0,10);
+  const topRows = top.map((o,i)=>`<div class="li"><span><span class="muted num small">${i+1}</span> ${esc(o.name.length>28?o.name.slice(0,28)+'…':o.name)} <span class="muted small">${o.n} 次</span></span><b class="num">${yen(o.v)}</b></div>`).join('');
+  const best = withData.slice().sort((a,b)=>b.expense-a.expense)[0];
+  return `<div class="card" id="year" style="margin-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><h2>年度统计</h2><p class="h2sub" style="margin:0">年間（ねんかん）のまとめ · 有账单的月份 ${n} 个，平均值按这 ${n} 个月算</p></div>${nav}</div>
+    <div class="grid tiles">
+      <div class="card tile"><div class="lab">全年收入</div><div class="val num">${yen(inc)}</div><div class="foot">月均 ${yen(inc/n)}</div></div>
+      <div class="card tile"><div class="lab">全年实际支出</div><div class="val num">${yen(exp)}</div><div class="foot">月均 ${yen(exp/n)} · 最多是 ${+best.ym.slice(5)}月 ${yen(best.expense)}</div></div>
+      <div class="card tile"><div class="lab">全年结余</div><div class="val num ${net>=0?'pos':'neg'}">${yen(net)}</div><div class="foot">${rate!==null?'结余率 '+rate+'%':''}${save?' · 存入投资 '+yen(save):''}</div></div>
+      <div class="card tile excl"><div class="lab">全年已排除</div><div class="val num">${yen(excl)}</div><div class="foot">重复和转账，没算进支出${(reimb||reimbIn)?' · 报销垫付 '+yen(reimb)+' / 到账 '+yen(reimbIn):''}</div></div>
+    </div>
+    <div class="grid two" style="margin-top:14px">
+      <div><h2 style="font-size:14px;margin:0 0 8px">每月收支</h2><div class="tablewrap"><table><thead><tr><th>月份</th><th class="r">收入</th><th class="r">实际支出</th><th class="r">结余</th><th>支出</th></tr></thead><tbody>${monthRows}</tbody>
+        <tfoot><tr style="font-weight:600"><td>合计</td><td class="r num">${yen(inc)}</td><td class="r num">${yen(exp)}</td><td class="r num ${net>=0?'pos':'neg'}">${yen(net)}</td><td></td></tr></tfoot></table></div></div>
+      <div><h2 style="font-size:14px;margin:0 0 8px">支出分类（全年）</h2><div class="bars">${catRows || '<div class="empty">没有支出</div>'}</div></div>
+    </div>
+    ${top.length ? `<div style="margin-top:16px"><h2 style="font-size:14px;margin:0 0 4px">花钱最多的 ${top.length} 个商户</h2><p class="h2sub">按全年金额排，同一商户的多笔会合在一起</p><div class="list">${topRows}</div></div>` : ''}
+  </div>`;
 }
 function niceStep(x){ const p = Math.pow(10, Math.floor(Math.log10(Math.max(1,x)))); const f = x/p; return (f<=1?1:f<=2?2:f<=5?5:10)*p; }
 
@@ -1823,6 +1872,7 @@ function arm(btn, key, label){ if (armed[key] && Date.now()-armed[key] < 4000) {
 document.addEventListener('click', e=>{
   const tab = e.target.closest('.tab'); if (tab) { go(tab.dataset.v); return; }
   const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
+  const gm = e.target.closest('[data-gomonth]'); if (gm) { S.month = gm.dataset.gomonth; S.year = null; go('overview'); return; }
   const ig = e.target.closest('[data-incomego]'); if (ig) { S.incomeView = true; S.catFilter = ''; S.filter = 'ok'; S.q = ''; S.srcFilter = ''; go('txns'); return; }
   const ic = e.target.closest('[data-incat]'); if (ic) { S.catFilter = ic.dataset.incat || ''; renderTxView(); return; }
   const cg = e.target.closest('[data-catgo]'); if (cg) { S.incomeView = false; S.catFilter = cg.dataset.catgo; S.filter = 'ok'; S.q = ''; S.srcFilter = ''; go('txns'); return; }
@@ -1856,6 +1906,8 @@ document.addEventListener('click', e=>{
     case 'sync-now': syncNow().then(()=>render()); break;
     case 'sync-unlock': { const p = $('#syncPassOnly').value; if (!p) break; Sync.pass = p; if ($('#syncRememberOnly').checked) { Sync.cfg.pass = p; saveCfg(); } syncNow().then(()=>render()); break; }
     case 'sync-off': if (arm(b,'syncoff','再点一次：这台设备停止同步')) { disconnectSync(); render(); } break;
+    case 'year-prev': S.year = String(+(S.year || S.month.slice(0,4)) - 1); render(); setTimeout(()=>{ const el = $('#year'); if (el) el.scrollIntoView({block:'start'}); }, 30); break;
+    case 'year-next': S.year = String(+(S.year || S.month.slice(0,4)) + 1); render(); setTimeout(()=>{ const el = $('#year'); if (el) el.scrollIntoView({block:'start'}); }, 30); break;
     case 'clear-cat': S.catFilter = ''; S.incomeView = false; S.filter = 'all'; render(); break;
     case 'goto-rates': go('plan'); setTimeout(()=>{ const el = $('#rates'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'goto-sync': go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
@@ -1904,8 +1956,8 @@ document.addEventListener('dragover', e=>{ const d = e.target.closest && e.targe
 document.addEventListener('dragleave', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
 document.addEventListener('drop', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d){ e.preventDefault(); d.classList.remove('over'); handleFiles([...e.dataTransfer.files]); } });
 $('#savePill').addEventListener('click', ()=>{ go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); });
-$('#prevM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,-1); render(); });
-$('#nextM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,1); render(); });
+$('#prevM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,-1); S.year = null; render(); });
+$('#nextM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,1); S.year = null; render(); });
 function download(name, text, type){
   const url = URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
