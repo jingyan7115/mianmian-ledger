@@ -202,7 +202,7 @@ const RULES_SRC = [
   ['trans', ['滴滴','地铁','公交','高德打车','曹操出行','铁路','12306','航空']],
   ['tel',   ['中国移动','中国联通','中国电信','话费']],
   ['sub',   ['爱奇艺','腾讯视频','优酷','哔哩哔哩','BILIBILI','网易云','QQ音乐','芒果TV','百度网盘']],
-  ['shop',  ['淘宝','天猫','京东','拼多多','唯品会','闲鱼']],
+  ['shop',  ['淘宝','天猫','京东','拼多多','唯品会','闲鱼','小红书','行吟信息','抖音商城','抖音电商']],
   ['health',['药房','药店','医院','诊所']],
   ['cat',   ['ペット','動物病院','どうぶつ病院','アニマルクリニック','ペットフード','猫砂','ねこ','PETGO','ペテモ','PETEMO']],
   ['eat',   ['スターバックス','STARBUCKS','ドトール','タリーズ','コメダ','マクドナルド','MCDONALD','すき家','吉野家','松屋','サイゼリヤ','ガスト','スシロー','くら寿司','はま寿司','UBEREATS','出前館','WOLT','モスバーガー','ケンタッキー','丸亀','カフェ','CAFE','COFFEE','珈琲','レストラン','居酒屋','ラーメン','食堂','ベーカリー','ミスタードーナツ','ミスド','サーティワン','焼肉','バーガー']],
@@ -234,7 +234,10 @@ const PLATFORMS = [
   ['kyash','Kyash',/KYASH/],
   ['amazonpay','Amazon Pay',/AMAZONPAY/],
   ['linepay','LINE Pay',/LINEPAY/],
-  ['revolut','Revolut',/REVOLUT/]
+  ['revolut','Revolut',/REVOLUT/],
+  ['alipay','支付宝',/支付宝|ALIPAY/],
+  ['wechatpay','微信支付',/微信支付|财付通|WECHATPAY|TENPAY/],
+  ['douyinpay','抖音支付',/抖音支付|DOUYINPAY/]
 ];
 const CARD_CO = /カードサービス|カード会社|クレジット|ラクテンカード|楽天カード|ミツイスミトモカード|三井住友カード|SMBCカード|JCB|ジエーシービー|ジェーシービー|VISA|ビザ|MUFGカード|ニコス|NICOS|イオンカード|イオンクレジット|エポス|EPOS|セゾン|SAISON|オリコ|ORICO|アメックス|AMEX|アメリカンエキスプレス|ビューカード|VIEWカード|PAYPAYカード|ペイペイカード|ライフカード|セディナ|ダイナース|DCカード|UCカード|ジャックス|JACCS|アプラス|ポケットカード|Dカード/;
 const CARD_CO_L = new RegExp(CARD_CO.source.replace(/ー/g,''));
@@ -248,7 +251,7 @@ const WALLET_IN  = /チャージ|CHARGE|入金|銀行|口座|オートチャー�
 const INCOME_SAL = /給与|給料|賞与|キュウヨ|キユウヨ|ショウヨ|シヨウヨ|SALARY|PAYROLL/;
 const SKIP_DESC = /^(合計|小計|総合計|前月繰越|繰越|今回ご請求額|ご請求額|お支払合計)/;
 const NOISE = /VISA国内利用|VISA海外利用|国内利用|海外利用|VS|Vデビット|JCBデビット|デビット|お支払い|お支払|支払い|支払|ショッピング|ご利用|利用|カード|店舗|本店|支店/g;
-const ALIASES = [['アマゾン','AMAZON'],['AMAZONCOJP','AMAZON'],['AMAZONCO','AMAZON'],['スターバックス','STARBUCKS'],['マクドナルド','MCDONALDS'],['ローソン','LAWSON'],['ファミリーマート','FAMILYMART'],['ファミマ','FAMILYMART'],['セブンイレブン','SEVENELEVEN'],['ユニクロ','UNIQLO'],['ネットフリックス','NETFLIX'],['スポティファイ','SPOTIFY'],['マツキヨ','マツモトキヨシ']];
+const ALIASES = [['行吟信息科技','小红书'],['行吟信息','小红书'],['XIAOHONGSHU','小红书'],['北京抖音信息服务','抖音'],['抖音电商','抖音'],['字节跳动','抖音'],['DOUYIN','抖音'],['アマゾン','AMAZON'],['AMAZONCOJP','AMAZON'],['AMAZONCO','AMAZON'],['スターバックス','STARBUCKS'],['マクドナルド','MCDONALDS'],['ローソン','LAWSON'],['ファミリーマート','FAMILYMART'],['ファミマ','FAMILYMART'],['セブンイレブン','SEVENELEVEN'],['ユニクロ','UNIQLO'],['ネットフリックス','NETFLIX'],['スポティファイ','SPOTIFY'],['マツキヨ','マツモトキヨシ']];
 
 function platformOf(n){ for (const [k,name,re] of PLATFORMS) if (re.test(n)) return k; return null; }
 function platformName(k){ const p = PLATFORMS.find(p=>p[0]===k); return p ? p[1] : k; }
@@ -614,6 +617,7 @@ function analyze(txns, sources, learned){
   const groups = {};
   for (const x of txns) if (free(x)) { const k = x.o + '|' + x.a + '|' + curOf(x); (groups[k] || (groups[k] = [])).push(x); }
   const order = new Map(txns.map((x,k)=>[x.i,k]));
+  const SN = {}; const sn = id => SN[id] !== undefined ? SN[id] : (SN[id] = S[id] ? cleanDesc(S[id].name) : '');
   const score = x => (platformOf(nn(x)) ? 0 : 100) + (TYPE_PRI[typeOf(x)]||1)*10 + Math.min(cl(x).length, 9);
   for (const g of Object.values(groups)){
     if (g.length < 2) continue;
@@ -629,7 +633,9 @@ function analyze(txns, sources, learned){
         continue;
       }
       const plat = !!(platformOf(nn(x)) || platformOf(nn(y)));
-      const auto = plat || s >= 0.34 || (s >= 0.2 && dd === 0);
+      const srcHit = (sn(y.s).length >= 2 && cl(x).includes(sn(y.s))) || (sn(x.s).length >= 2 && cl(y).includes(sn(x.s)));
+      const auto = plat || srcHit || s >= 0.34 || (s >= 0.2 && dd === 0);
+      if (!auto && dd > 0) continue;
       cands.push({x,y,dd,s,auto,same:false});
     }
     cands.sort((a,b)=> (b.auto-a.auto) || (b.s-a.s) || (a.dd-b.dd));
@@ -997,6 +1003,24 @@ async function connectSync(repo, token, pass, remember){
   if (ok) S.month = latestMonth();
   return ok;
 }
+function b64url(u8){ return b64.enc(u8).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function unb64url(s){ s = s.replace(/-/g,'+').replace(/_/g,'/'); while (s.length % 4) s += '='; return b64.dec(s); }
+async function makeJoinLink(){
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await keyFor(Sync.pass, salt, KDF_IT);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify({ repo:Sync.cfg.repo, token:Sync.cfg.token }))));
+  const payload = b64url(new TextEncoder().encode(JSON.stringify({ v:1, s:b64.enc(salt), i:b64.enc(iv), c:b64.enc(ct) })));
+  return location.origin + location.pathname + '#join=' + payload;
+}
+async function useJoinLink(payload, pass, remember){
+  let cfg;
+  try {
+    const o = JSON.parse(new TextDecoder().decode(unb64url(payload)));
+    const key = await keyFor(pass, b64.dec(o.s), KDF_IT);
+    cfg = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name:'AES-GCM', iv:b64.dec(o.i) }, key, b64.dec(o.c))));
+  } catch(e){ Sync.err = '同步密码不对，或者连接链接不完整。'; return false; }
+  return connectSync(cfg.repo, cfg.token, pass, remember);
+}
 function disconnectSync(){ Sync.cfg = null; Sync.pass = null; Sync.keyCache = null; Sync.salt = null; Sync.state = 'off'; Sync.err = ''; saveCfg(); pillIdle(); }
 
 async function initStore(){
@@ -1076,7 +1100,8 @@ function viewOverview(){
   const budgetTotal = Object.entries(budgets).filter(([k])=>k!=='save').reduce((s,[,v])=>s+(+v||0),0);
   const budgetSpent = Object.keys(budgets).filter(k=>k!=='save').reduce((s,k)=>s+(M.byCat[k]||0),0);
   if (!M.count) {
-    return `<div class="card"><h2>${fmtMonth(S.month)}还没有账单</h2><p class="muted small">去「上传账单」导入这个月的信用卡、银行、PayPay 明细。同一笔消费出现在多个账单里也没关系，我会自动去重。</p><button class="btn pri" data-go="import">上传账单</button></div>` + trendCard();
+    const syncHint = (!S.demo && !Sync.cfg) ? `<div class="alert info" style="margin-bottom:14px"><span>现在只保存在这台设备。要在别的设备上看到同样的账，先在这里设置同步。</span><button class="btn sm" data-act="goto-sync">设置同步</button></div>` : '';
+    return syncHint + `<div class="card"><h2>${fmtMonth(S.month)}还没有账单</h2><p class="muted small">去「上传账单」导入这个月的信用卡、银行、PayPay 明细。同一笔消费出现在多个账单里也没关系，我会自动去重。</p><button class="btn pri" data-go="import">上传账单</button></div>` + trendCard();
   }
   const rate = M.income > 0 ? Math.round((M.income - M.expense) / M.income * 100) : null;
   const tiles = `
@@ -1502,6 +1527,12 @@ function ratesCard(){
 }
 function syncCard(){
   const err = Sync.err ? `<div class="alert warn" style="margin:0 0 12px"><span>${esc(Sync.err)}</span></div>` : '';
+  if (S.join && !Sync.cfg) {
+    return `<div class="card" id="sync"><h2>连接到你的账本</h2><p class="h2sub">你是用「连接另一台设备」的链接打开的。输入同步密码，这台设备就会连上同一本账。</p>${err}
+      <div class="fields"><label class="field">同步密码<input type="password" id="joinPass" autocomplete="current-password"></label>
+      <label class="field" style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="joinRemember" checked> 在这台设备记住</label>
+      <button class="btn pri" data-act="join-connect">连接并同步</button><button class="btn" data-act="join-cancel">不用了</button></div></div>`;
+  }
   const lock = `<p class="small muted" style="margin:10px 0 0">账单在你的设备上用同步密码加密后才上传，GitHub 上只有一串乱码。token 和密码只存在这台设备的浏览器里，不会发给任何其他地方。</p>`;
   if (Sync.cfg && !Sync.pass) {
     return `<div class="card" id="sync"><h2>同步 · 需要密码</h2><p class="h2sub">已连接 ${esc(Sync.cfg.repo)}。输入同步密码就能继续同步。</p>${err}
@@ -1512,7 +1543,8 @@ function syncCard(){
   if (Sync.cfg) {
     return `<div class="card" id="sync"><h2>同步</h2><p class="h2sub">这台设备的改动会自动加密上传到 <b>${esc(Sync.cfg.repo)}</b>，打开页面时会拉取其他设备的更新。</p>${err}
       <div class="kv"><span>状态 <b>${Sync.state==='err'?'出错':Sync.last?'正常':'等待中'}</b></span><span>上次同步 <b class="num">${Sync.last?Sync.last.toLocaleString('zh-CN',{hour12:false}):'—'}</b></span><span>密码 <b>${Sync.cfg.pass?'已在这台设备记住':'只在本次打开时记住'}</b></span></div>
-      <div class="toolbar" style="margin:12px 0 0"><button class="btn pri" data-act="sync-now">立即同步</button><button class="btn" data-act="sync-off">这台设备停止同步</button></div>${lock}</div>`;
+      <div class="toolbar" style="margin:12px 0 0"><button class="btn pri" data-act="sync-now">立即同步</button><button class="btn" data-act="make-join">连接另一台设备</button><button class="btn" data-act="sync-off">这台设备停止同步</button></div>
+      ${S.joinLink ? `<div style="margin-top:12px"><p class="small" style="margin:0 0 6px">在新设备上打开下面这个链接，输入同步密码就能连上，不用再填 token。链接里的 token 是用同步密码加密的，但还是请只发给你自己（比如 AirDrop、发给自己的 LINE），不要给别人。</p><div style="display:flex;gap:8px"><input type="text" id="joinLinkBox" readonly value="${esc(S.joinLink)}" style="flex:1;min-width:0"><button class="btn" data-act="copy-join">复制</button></div></div>` : ''}${lock}</div>`;
   }
   const host = location.hostname.endsWith('.github.io') ? location.hostname.split('.')[0] : '';
   return `<div class="card" id="sync"><h2>多设备同步（可选）</h2><p class="h2sub">现在数据只存在这台设备的浏览器里。连上你自己的 GitHub 私有仓库后，手机和电脑都能打开、都能更新。</p>${err}
@@ -1559,6 +1591,10 @@ document.addEventListener('click', e=>{
     case 'dl-csv': { const L = S.txns.filter(t=>ymOf(t.d)===S.month).sort((a,b)=>a.d<b.d?-1:1); const q = s=>'"'+String(s).replace(/"/g,'""')+'"'; const csv = '\uFEFF' + ['日期,内容,来源,分类,收支,金额,状态'].concat(L.map(t=>[t.d,q(t.t),q(srcName(t.s)),q(CAT_NAME[t.c]||''),t.o?'支出':'收入',t.a,{ok:'计入',dup:'重复',xfer:'转账'}[t.st]].join(','))).join('\n'); download('面面家計簿-' + S.month + '.csv', csv, 'text/csv'); break; }
     case 'pick-restore': $('#restoreFile').click(); break;
     case 'sync-connect': doConnect(b); break;
+    case 'make-join': makeJoinLink().then(l=>{ S.joinLink = l; render(); }).catch(()=>toast('生成链接失败，请先确认同步正常')); break;
+    case 'copy-join': { const v = S.joinLink; navigator.clipboard.writeText(v).then(()=>toast('已复制，发到你的新设备上打开')).catch(()=>{ const el = $('#joinLinkBox'); if (el) { el.select(); } toast('请手动复制这个链接'); }); break; }
+    case 'join-connect': { const pass = $('#joinPass').value, rem = $('#joinRemember').checked; if (!pass) break; b.disabled = true; b.textContent = '连接中…'; useJoinLink(S.join, pass, rem).then(ok=>{ if (ok) { S.join = null; toast('连上了，数据已经同步过来'); go('overview'); } else render(); }); break; }
+    case 'join-cancel': S.join = null; render(); break;
     case 'sync-now': syncNow().then(()=>render()); break;
     case 'sync-unlock': { const p = $('#syncPassOnly').value; if (!p) break; Sync.pass = p; if ($('#syncRememberOnly').checked) { Sync.cfg.pass = p; saveCfg(); } syncNow().then(()=>render()); break; }
     case 'sync-off': if (arm(b,'syncoff','再点一次：这台设备停止同步')) { disconnectSync(); render(); } break;
@@ -1644,7 +1680,11 @@ async function doConnect(btn){
   if (ok) toast('同步好了。在别的设备上用同样的仓库、token 和密码连接即可。');
   render();
 }
-function fromHash(){ const h = location.hash.replace('#',''); if (['overview','txns','import','plan'].includes(h)) S.view = h; }
+function fromHash(){
+  const h = location.hash.replace('#','');
+  if (h.startsWith('join=')) { S.join = h.slice(5); S.view = 'plan'; try { history.replaceState(null, '', location.pathname + '#plan'); } catch(e){} return; }
+  if (['overview','txns','import','plan'].includes(h)) S.view = h;
+}
 window.addEventListener('hashchange', ()=>{ fromHash(); render(); });
 fromHash();
 initStore();
