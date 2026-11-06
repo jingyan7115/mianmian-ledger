@@ -1296,13 +1296,19 @@ function assetCard(){
     if (mode === 'snap') return `<div class="aform"><div class="fields"><label class="field">现在的金额（${esc(it.cur||'JPY')}）<input type="number" id="afAmt" min="0" step="1" value="${assetValueAt(it, today) ?? ''}"></label><label class="field">日期<input type="date" id="afDate" value="${today}"></label><button class="btn pri" data-act="asset-snap-save" data-id="${esc(it.id)}">更新</button><button class="btn" data-act="asset-cancel">取消</button></div>
       <p class="small muted" style="margin:6px 0 0">记的是这一天卡里一共有多少钱。不算收入，只用来校准余额。旧的数值会保留，用来算今年涨了多少。</p></div>`;
     if (mode === 'inc') {
-      const recent = S.txns.filter(x=>x.s==='as-'+it.id).sort((a,b)=>a.d<b.d?1:-1).slice(0,8);
-      return `<div class="aform"><div class="fields"><label class="field">日期<input type="date" id="afDate" value="${today}"></label><label class="field">收入金额（${esc(it.cur||'JPY')}）<input type="number" id="afAmt" min="0" step="1"></label>
-        <label class="field">分类<select id="afCat">${INC_CATS.filter(([k])=>k!=='refund').map(([k,n])=>`<option value="${k}">${n}</option>`).join('')}</select></label>
-        <label class="field">备注<input type="text" id="afMemo" placeholder="例：10月副业报酬"></label>
-        <button class="btn pri" data-act="asset-inc-save" data-id="${esc(it.id)}">记上</button><button class="btn" data-act="asset-cancel">取消</button></div>
+      const Yr = today.slice(0,4);
+      const all = S.txns.filter(x=>x.s==='as-'+it.id).sort((a,b)=>a.d<b.d?1:-1);
+      const recent = all.filter(x=>x.d.slice(0,4)===Yr);
+      const older = all.length - recent.length;
+      const ed = F.edit ? S.txns.find(x=>x.i===F.edit) : null;
+      const yTotal = recent.reduce((a,x)=>a+x.a,0);
+      return `<div class="aform">${ed?'<p class="small" style="margin:0 0 6px"><b>正在修改一笔收入</b></p>':''}<div class="fields"><label class="field">日期<input type="date" id="afDate" value="${ed?ed.d:today}"></label><label class="field">收入金额（${esc(it.cur||'JPY')}）<input type="number" id="afAmt" min="0" step="1" value="${ed?ed.a:''}"></label>
+        <label class="field">分类<select id="afCat">${INC_CATS.filter(([k])=>k!=='refund').map(([k,n])=>`<option value="${k}" ${ed&&ed.c===k?'selected':''}>${n}</option>`).join('')}</select></label>
+        <label class="field">备注<input type="text" id="afMemo" placeholder="例：10月副业报酬" value="${ed&&ed.t!=='手动记的收入'?esc(ed.t):''}"></label>
+        <button class="btn pri" data-act="asset-inc-save" data-id="${esc(it.id)}" data-edit="${ed?esc(ed.i):''}">${ed?'保存修改':'记上'}</button>${ed?`<button class="btn" data-act="asset-inc" data-id="${esc(it.id)}">不改了</button>`:''}<button class="btn" data-act="asset-cancel">收起</button></div>
         <p class="small muted" style="margin:6px 0 0">记的是这一天进了多少钱。会算进当月和全年的收入，也会加到这张卡的余额上。</p>
-        ${recent.length ? `<div class="list" style="margin-top:8px">${recent.map(x=>`<div class="li"><span><span class="num small muted">${x.d}</span> ${esc(x.t)} <span class="muted small">${esc(CAT_NAME[x.c]||'')}</span></span><span class="acts"><b class="num">${fmtCur(x.a, it.cur)}</b><button class="btn sm danger" data-act="asset-inc-del" data-id="${esc(x.i)}">删除</button></span></div>`).join('')}</div>` : ''}</div>`;
+        ${recent.length ? `<p class="small" style="margin:10px 0 2px">${Yr}年手动记的收入 · ${recent.length} 笔 · 合计 <b class="num">${fmtCur(yTotal, it.cur)}</b></p><div class="list">${recent.map(x=>`<div class="li"><span><span class="num small muted">${x.d}</span> ${esc(x.t)} <span class="muted small">${esc(CAT_NAME[x.c]||'')}</span></span><span class="acts"><b class="num">${fmtCur(x.a, it.cur)}</b><button class="btn sm" data-act="asset-inc-edit" data-id="${esc(it.id)}" data-tx="${esc(x.i)}">修改</button><button class="btn sm danger" data-act="asset-inc-del" data-id="${esc(x.i)}">删除</button></span></div>`).join('')}</div>` : `<p class="small muted" style="margin:8px 0 0">${Yr}年还没有手动记过收入</p>`}
+        ${older ? `<p class="small muted" style="margin:6px 0 0">往年还有 ${older} 笔，可以在「明细与查重」里切换到对应月份查看。</p>` : ''}</div>`;
     }
     return '';
   };
@@ -1387,6 +1393,11 @@ function yearCard(){
       <div class="card tile"><div class="lab">全年结余</div><div class="val num ${net>=0?'pos':'neg'}">${yen(net)}</div><div class="foot">${rate!==null?'结余率 '+rate+'%':''}${save?' · 存入投资 '+yen(save):''}</div></div>
       <div class="card tile excl"><div class="lab">全年已排除</div><div class="val num">${yen(excl)}</div><div class="foot">重复和转账，没算进支出${(reimb||reimbIn)?' · 报销垫付 '+yen(reimb)+' / 到账 '+yen(reimbIn):''}</div></div>
     </div>
+    ${(()=>{ const items = S.assets||[]; if (!items.length) return ''; const asOf = Y === todayStr().slice(0,4) ? todayStr() : Y + '-12-31';
+      const sv = items.filter(it=>it.g==='save').reduce((a,it)=>a+(toJPY(assetValueAt(it, asOf), it.cur)||0),0), iv = items.filter(it=>it.g==='invest').reduce((a,it)=>a+(toJPY(assetValueAt(it, asOf), it.cur)||0),0);
+      if (!sv && !iv) return '';
+      const yIn = S.txns.filter(x=>x.s.startsWith('as-') && !x.o && x.st==='ok' && x.d.slice(0,4)===Y).reduce((a,x)=>a+(CV(x)||0),0);
+      return `<div class="catbar" style="margin:12px 0 0"><span>${esc(S.settings.assetName||'我的底气')}（${asOf===todayStr()?'截至今天':Y+'年底'}）：储蓄 <b class="num">${yen(sv)}</b> · 投资 <b class="num">${yen(iv)}</b> · 合计 <b class="num">${yen(sv+iv)}</b>${yIn?' · 今年手动记的收入 <b class="num">'+yen(yIn)+'</b>（已算进全年收入）':''}</span><button class="btn sm" data-act="goto-assets">看详情</button></div>`; })()}
     <div class="grid two" style="margin-top:14px">
       <div><h2 style="font-size:14px;margin:0 0 8px">每月收支</h2><div class="tablewrap"><table><thead><tr><th>月份</th><th class="r">收入</th><th class="r">实际支出</th><th class="r">结余</th><th>支出</th></tr></thead><tbody>${monthRows}</tbody>
         <tfoot><tr style="font-weight:600"><td>合计</td><td class="r num">${yen(inc)}</td><td class="r num">${yen(exp)}</td><td class="r num ${net>=0?'pos':'neg'}">${yen(net)}</td><td></td></tr></tfoot></table></div></div>
@@ -2058,6 +2069,7 @@ document.addEventListener('click', e=>{
     case 'asset-edit': S.assetForm = { mode:'edit', id }; render(); scrollAssets(); break;
     case 'asset-snap': S.assetForm = { mode:'snap', id }; render(); scrollAssets(); break;
     case 'asset-inc': S.assetForm = { mode:'inc', id }; render(); scrollAssets(); break;
+    case 'asset-inc-edit': S.assetForm = { mode:'inc', id, edit: b.dataset.tx }; render(); scrollAssets(); break;
     case 'asset-save': {
       const name = $('#afName').value.trim(); if (!name) { toast('先填个名称'); break; }
       if (S.demo) clearDemo();
@@ -2079,9 +2091,16 @@ document.addEventListener('click', e=>{
     case 'asset-inc-save': {
       const it = (S.assets||[]).find(a=>a.id===id); const v = +$('#afAmt').value, d = $('#afDate').value || todayStr();
       if (!it || !(v > 0)) { toast('填一下收入金额'); break; }
-      const dupe = S.txns.find(x=>x.s==='as-'+it.id && x.d===d && x.a===v);
+      const editId = b.dataset.edit;
+      const dupe = S.txns.find(x=>x.s==='as-'+it.id && x.d===d && x.a===v && x.i!==editId);
       if (dupe && !arm(b, 'inc'+id+d+v, '这天已经记过一样的金额，再点一次确认')) break;
       const memo = $('#afMemo').value.trim();
+      if (editId) {
+        const x = S.txns.find(t=>t.i===editId);
+        if (x) { Object.assign(x, { d, a: v, c: $('#afCat').value, t: memo || '手动记的收入' }); stamp(x); }
+        S.assetForm = { mode:'inc', id };
+        markDirty([]); toast('改好了'); render(); scrollAssets(); break;
+      }
       S.txns.push({ i: rid(), s: 'as-'+it.id, f: 'manual', d, t: memo || '手动记的收入', a: v, o: 0, c: $('#afCat').value, m: 1, mc: 1, st: 'ok', u: Date.now() });
       markDirty([]); toast('记上了，已算进' + (+d.slice(5,7)) + '月收入'); render(); scrollAssets(); break;
     }
@@ -2098,6 +2117,7 @@ document.addEventListener('click', e=>{
     case 'year-prev': S.year = String(+(S.year || S.month.slice(0,4)) - 1); render(); setTimeout(()=>{ const el = $('#year'); if (el) el.scrollIntoView({block:'start'}); }, 30); break;
     case 'year-next': S.year = String(+(S.year || S.month.slice(0,4)) + 1); render(); setTimeout(()=>{ const el = $('#year'); if (el) el.scrollIntoView({block:'start'}); }, 30); break;
     case 'clear-cat': S.catFilter = ''; S.incomeView = false; S.filter = 'all'; render(); break;
+    case 'goto-assets': { const el = $('#assets'); if (el) el.scrollIntoView({block:'start'}); break; }
     case 'goto-rates': go('plan'); setTimeout(()=>{ const el = $('#rates'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'goto-sync': go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); break;
     case 'wipe': if (arm(b,'wipe','再点一次：真的全部清空')) { S.demo=false; for (const t of S.txns) bury('t', t.i); for (const x of S.sources) bury('s', x.id); for (const x of S.settings.imports) bury('i', x.id); for (const x of (S.assets||[])) bury('a', x.id); S.assets=[]; S.sources=[]; S.txns=[]; S.settings={budgets:{},fixed:[],learned:{},imports:[],su:0}; markDirty([], true); toast(Sync.cfg?'已清空，GitHub 上的数据也会同步清空':'已清空'); render(); } break;
