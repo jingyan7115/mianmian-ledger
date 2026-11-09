@@ -170,7 +170,12 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
 .bcat.open{background:var(--bg)}
 .bhead{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
 .bhead input{width:110px}
-.bsub{display:grid;grid-template-columns:minmax(0,1fr) 96px 30px;gap:6px;align-items:center}
+.bsub{display:grid;grid-template-columns:minmax(0,1fr) 84px 74px 30px;gap:6px;align-items:center;padding-bottom:6px;border-bottom:1px dashed var(--line)}
+.bsub:last-child{border-bottom:0}
+.bsub .bkw{grid-column:1 / -1;font-size:12px;color:var(--muted)}
+.bsub select.unit,.bin select.unit{font-size:12px;padding:3px 4px}
+.bin{display:inline-flex;gap:4px;align-items:center}
+.bin input{width:96px}
 .bsub input{width:100%;font-size:13px;padding:4px 7px}
 .bsub .iconbtn{width:30px;height:30px;font-size:14px}
 .budgetgrid label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
@@ -794,18 +799,19 @@ function compactTx(x){
   return y;
 }
 function stateBody(compact){
-  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
            imports:S.settings.imports.slice(-200), txns: compact ? S.txns.map(compactTx) : S.txns, assets:S.assets||[], del:S.del };
 }
 function applyState(b){
   if (!b) return;
   S.sources = Array.isArray(b.sources) ? b.sources : [];
   const st = b.settings || {};
-  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
   S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
   S.txns = Array.isArray(b.txns) ? b.txns : [];
   S.assets = Array.isArray(b.assets) ? b.assets : [];
   S.del = b.del || {};
+  recomputeBudgets();
 }
 function authFp(b){
   return fnv(JSON.stringify([
@@ -1128,6 +1134,7 @@ function loadDemo(){
   ];
   S.txns.push({ i:'demo-ai1', s:'as-demo-a1', f:'manual', d:'2026-10-15', t:'副业报酬（示例）', a:50000, o:0, c:'side', m:1, mc:1, st:'ok' });
   S.settings.assetName = '';
+  S.settings.budgetRaw = {}; recomputeBudgets();
   S.month = '2026-10';
   analyze(S.txns, S.sources, S.settings.learned);
 }
@@ -1189,7 +1196,7 @@ function viewOverview(){
     if (subs.length) {
       const spentBy = {}; let unassigned = 0;
       for (const x of S.txns) { if (ymOf(x.d)!==S.month || x.st!=='ok' || !x.o || x.c!==c.k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) spentBy[sid] = (spentBy[sid]||0) + v; else unassigned += v; }
-      subHtml = `<div class="subbars">${subs.map(i=>{ const sp = spentBy[i.id]||0, bud = +i.amt||0, r = bud ? sp/bud : 0; const cl = !bud ? '' : r>1 ? 'bad' : r>0.8 ? 'warn' : 'good';
+      subHtml = `<div class="subbars">${subs.map(i=>{ const sp = spentBy[i.id]||0, bud = (i.amtJ != null ? +i.amtJ : +i.amt) || 0, r = bud ? sp/bud : 0; const cl = !bud ? '' : r>1 ? 'bad' : r>0.8 ? 'warn' : 'good';
         return `<div class="subbar"><span class="nm">${esc(i.name||'未命名')}</span><span class="amt num">${yen(sp)}${bud?` <span class="muted">/ ${yen(bud)}</span>`:''}${bud&&sp>bud?` <span class="neg">超 ${yen(sp-bud)}</span>`:''}</span><div class="track"><div class="fill ${cl}" style="width:${bud?Math.min(100,r*100).toFixed(1):0}%"></div></div></div>`; }).join('')}
         ${unassigned ? `<div class="subbar"><span class="nm muted">未指定小项</span><span class="amt num muted">${yen(unassigned)}</span><button class="btn sm" data-catgo="${c.k}" style="grid-column:1 / 3;justify-self:start">去指定</button></div>` : ''}</div>`;
     }
@@ -1386,11 +1393,11 @@ function reviewCard(){
   const r500 = v => Math.max(500, Math.ceil(v/500)*500);
   const rows = [];
   for (const k of cats) {
-    const items = (BI[k] || []).filter(i => +i.amt > 0);
+    const items = (BI[k] || []).filter(i => +i.amt > 0 && i.amtJ != null);
     let unassigned = 0;
     if (items.length) for (const o of hist) for (const x of S.txns) { if (ymOf(x.d)!==o.ym || x.st!=='ok' || !x.o || x.c!==k || subOf(x)) continue; unassigned += CV(x) || 0; }
     const lines = items.length
-      ? items.map(i => ({ k, sub: i.id, name: (CAT_NAME[k]||k) + ' · ' + (i.name||'未命名'), budget: +i.amt, series: hist.map(o => subSpent(o.ym, k)[i.id] || 0) }))
+      ? items.map(i => ({ k, sub: i.id, name: (CAT_NAME[k]||k) + ' · ' + (i.name||'未命名'), budget: +i.amtJ, series: hist.map(o => subSpent(o.ym, k)[i.id] || 0) }))
       : [{ k, sub: '', name: CAT_NAME[k]||k, budget: +budgets[k], series: hist.map(o => o.M.byCat[k] || 0) }];
     for (const L of lines) {
       const spent = L.series[0], n = L.series.length, avg = L.series.reduce((a,v)=>a+v,0) / n;
@@ -1404,7 +1411,7 @@ function reviewCard(){
   }
   const over = rows.filter(r => r.spent > r.budget);
   const flagged = rows.filter(r => r.kind !== 'ok');
-  const rowHtml = r => `<div class="li" style="align-items:flex-start"><div style="min-width:0"><div>${esc(r.name)} <span class="num ${r.spent>r.budget?'neg':'muted'}">${yen(r.spent)} / ${yen(r.budget)}</span>${r.spent>r.budget?` <span class="pill dup">超 ${yen(r.spent-r.budget)}</span>`:''}</div><div class="why">${esc(r.tip)}</div></div>${r.sugg?`<button class="btn sm" data-act="adopt-budget" data-k="${r.k}" data-sub="${esc(r.sub)}" data-v="${r.sugg}">预算改成 ${yen(r.sugg)}</button>`:''}</div>`;
+  const rowHtml = r => `<div class="li" style="align-items:flex-start"><div style="min-width:0"><div>${esc(r.name)} <span class="num ${r.spent>r.budget?'neg':'muted'}">${yen(r.spent)} / ${yen(r.budget)}</span>${r.spent>r.budget?` <span class="pill dup">超 ${yen(r.spent-r.budget)}</span>`:''}</div><div class="why">${esc(r.tip)}</div></div>${r.sugg?`<button class="btn sm" data-act="adopt-budget" data-k="${r.k}" data-sub="${esc(r.sub)}" data-v="${r.sugg}">预算改成 ${rmb(r.sugg) || yen(r.sugg)}</button>`:''}</div>`;
   const totalB = rows.reduce((a,r)=>a+r.budget,0), totalS = rows.reduce((a,r)=>a+r.spent,0);
   return `<div class="card" style="margin-top:14px"><h2>${+RM.slice(5)}月预算复盘${RM!==S.month?'（上个月）':''}</h2>
     <p class="h2sub">设了预算的部分：花了 <b class="num">${yen(totalS)}</b> / 预算 <b class="num">${yen(totalB)}</b> · 超支 ${over.length} 项 · 平均值按最近 ${hist.length} 个有账单的月份算</p>
@@ -1524,7 +1531,7 @@ function renderTxRows(){
     else { pill = x.m ? '<span class="pill ok">计入·已确认</span>' : '<span class="pill ok">计入</span>'; acts = `<button class="btn sm" data-act="set-dup" data-id="${x.i}">标为重复</button><button class="btn sm" data-act="set-xfer" data-id="${x.i}">标为转账</button>`; }
     const why = [x.sus && x._sw ? x._sw : x.w, x.bc ? '账单分类：' + x.bc : ''].filter(Boolean).join(' · ');
     const exc = x.st!=='ok';
-    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`<select data-cat="${x.i}" aria-label="分类">${opts}</select>${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || !its || !its.length) return ''; const cur = subOf(x); return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
+    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`<select data-cat="${x.i}" aria-label="分类">${opts}</select>${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || !its || !its.length) return ''; const info = subInfo(x), cur = info && info.id; return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}${cur===i.id&&info.how==='kw'?'（自动）':''}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
   }).join('');
   body.innerHTML = html || `<tr><td colspan="6" class="empty">没有符合条件的记录</td></tr>`;
 }
@@ -2016,14 +2023,17 @@ function viewPlan(){
   const budgetTotal = Object.entries(S.settings.budgets).filter(([k])=>k!=='save').reduce((s,[,v])=>s+(+v||0),0);
   const fixedOutside = S.settings.fixed.filter(f=>!(+S.settings.budgets[f.cat])).reduce((s,f)=>s+(+f.amt||0),0);
   const planned = budgetTotal + fixedOutside;
-  const BI = S.settings.budgetItems || {};
+  const BI = S.settings.budgetItems || {}, RW = S.settings.budgetRaw || {}, DC = S.settings.budgetDefCur || 'JPY';
+  const cnyRate = +(S.settings.rates||{}).CNY || 0;
+  const unitSel = (attrs, cur) => `<select ${attrs} class="unit" aria-label="单位"><option value="JPY" ${cur==='JPY'?'selected':''}>日元</option><option value="CNY" ${cur==='CNY'?'selected':''}>人民币</option></select>`;
+  const both = vj => { const r = rmb(vj); return r ? `${r} <span class="muted small">≈ ${yen(vj)}</span>` : yen(vj); };
   const budgets = EXP_CATS.filter(([k])=>!['card','wallet','cash','reimb'].includes(k)).map(([k,n])=>{
     const items = BI[k] || [];
-    const sum = items.reduce((a,x)=>a+(+x.amt||0),0);
+    const raw = RW[k];
     const head = items.length
-      ? `<span class="num" title="由下面的小项相加">${yen(sum)}</span>`
-      : `<input type="number" min="0" step="1000" data-budget="${k}" value="${S.settings.budgets[k]||''}" placeholder="—" aria-label="${esc(n)}预算">`;
-    const rows = items.map(x=>`<div class="bsub"><input type="text" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="name" value="${esc(x.name||'')}" placeholder="比如：午饭、咖啡" aria-label="小项名称"><input type="number" min="0" step="500" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="amt" value="${x.amt||''}" placeholder="金额" aria-label="小项金额"><button class="iconbtn" data-act="bi-del" data-k="${k}" data-id="${esc(x.id)}" aria-label="删除这一项">×</button></div>`).join('');
+      ? `<span class="num" title="由下面的小项相加">${both(S.settings.budgets[k]||0)}</span>`
+      : `<span class="bin"><input type="number" min="0" step="100" data-budget="${k}" value="${raw&&raw.v?raw.v:''}" placeholder="—" aria-label="${esc(n)}预算">${unitSel(`data-bcur="${k}"`, (raw&&raw.cur)||DC)}</span>`;
+    const rows = items.map(x=>`<div class="bsub"><input type="text" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="name" value="${esc(x.name||'')}" placeholder="比如：午饭、咖啡" aria-label="小项名称"><input type="number" min="0" step="100" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="amt" value="${x.amt||''}" placeholder="金额" aria-label="小项金额">${unitSel(`data-bi="${k}" data-bid="${esc(x.id)}" data-bk="cur"`, x.cur||'JPY')}<button class="iconbtn" data-act="bi-del" data-k="${k}" data-id="${esc(x.id)}" aria-label="删除这一项">×</button><input type="text" class="bkw" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="kw" value="${esc(x.kw||'')}" placeholder="自动归类关键词，用逗号分开，如：カフェ, コーヒー, STARBUCKS" aria-label="自动归类关键词"></div>`).join('');
     return `<div class="bcat${items.length?' open':''}"><div class="bhead"><span>${esc(n)}</span><span class="acts">${head}<button class="btn sm" data-act="bi-add" data-k="${k}" title="把这个预算拆成几项">＋ 小项</button></span></div>${rows}</div>`;
   }).join('');
   const sources = S.sources.map(s=>{ const n = S.txns.filter(x=>x.s===s.id).length; return `<div class="li"><span>${esc(s.name)} <span class="muted small">${n} 笔</span></span><span class="acts"><select data-srccur="${esc(s.id)}" aria-label="币种">${CURS.map(([k,nm])=>`<option value="${k}" ${(s.cur||'JPY')===k?'selected':''}>${nm}</option>`).join('')}</select><select data-srctype="${esc(s.id)}" aria-label="类型">${SRC_TYPES.map(([k,nm])=>`<option value="${k}" ${s.type===k?'selected':''}>${nm}</option>`).join('')}</select><button class="btn sm danger" data-act="del-src" data-id="${esc(s.id)}">删除来源和它的记录</button></span></div>`; }).join('') || '<div class="empty">还没有来源，导入账单时会自动建立</div>';
@@ -2031,10 +2041,13 @@ function viewPlan(){
     ${syncCard()}
     <div class="card"><h2>固定支出</h2><p class="h2sub">房租、水电、手机、订阅这类每月都有的。「关键词」写账单里会出现的字，比如 家賃、ドコモ、NETFLIX，我每月帮你核对有没有扣。</p>
       ${fixed}<div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fixed">＋ 加一项</button><span class="small">每月固定 <b class="num">${yen(fixedTotal)}</b>${avgInc?` · 约占收入 ${Math.round(fixedTotal/avgInc*100)}%`:''}</span></div></div>
-    <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。</p>
+    <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。金额可以用日元或人民币填，会按汇率自动换算。</p>
+      <div class="fields" style="margin:0 0 12px"><label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" id="budgetRate" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label><button class="btn sm" data-act="fetch-rate">获取今天的汇率</button></div>
+      ${S.budgetRateMissing ? `<div class="alert warn" style="margin:0 0 12px"><span>有用人民币填的预算，但还没填汇率，这部分暂时没算进去。</span></div>` : ''}
       <div class="budgetgrid">${budgets}</div>
       <p class="small muted" style="margin:8px 0 0">点「＋ 小项」可以把一个分类的预算拆开写清楚，比如外食拆成「午饭 15,000 · 咖啡 3,000」。有小项时，这个分类的预算就是小项加起来的总数。</p>
-      <p class="small" style="margin:12px 0 0">预算合计 <b class="num">${yen(budgetTotal)}</b>${avgInc?`。加上没设预算分类里的固定支出，每月计划花 <b class="num">${yen(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${yen(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${yen(avgInc-planned)}</b>`:''}</p></div>
+      ${cnyRate ? `<div class="catbar" style="margin:14px 0 0;display:block"><div style="font-size:15px">预算合计 <b class="num" style="font-size:20px">${rmb(budgetTotal)}</b> <span class="muted small">≈ ${yen(budgetTotal)}</span></div>${avgInc?`<div class="small" style="margin-top:4px">加上没设预算分类里的固定支出，每月计划花 <b class="num">${rmb(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${rmb(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${rmb(avgInc-planned)}</b></div>`:''}<div class="small muted" style="margin-top:4px">按 1 人民币 = ${cnyRate} 日元换算</div></div>`
+        : `<p class="small" style="margin:12px 0 0">预算合计 <b class="num">${yen(budgetTotal)}</b>（填上面的汇率以后，会用人民币显示）${avgInc?`。加上没设预算分类里的固定支出，每月计划花 <b class="num">${yen(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${yen(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${yen(avgInc-planned)}</b>`:''}</p>`}</div>
     ${ratesCard()}
     <div class="card"><h2>账单来源</h2><p class="h2sub">类型会影响查重和转账判断：银行里的「カード会社」扣款、给 PayPay 的充值，只有知道哪些是卡、哪些是钱包才能排除。</p><div class="list">${sources}</div></div>
     <div class="card"><h2>备份</h2><p class="h2sub">下载的备份文件是没加密的 JSON，请存在安全的地方。</p>
@@ -2187,15 +2200,24 @@ document.addEventListener('click', e=>{
     case 'clear-cat': S.catFilter = ''; S.incomeView = false; S.filter = 'all'; render(); break;
     case 'adopt-budget': {
       const k = b.dataset.k, sub = b.dataset.sub, v = +b.dataset.v;
-      if (sub) { const it = ((S.settings.budgetItems||{})[k]||[]).find(i=>i.id===sub); if (it) { it.amt = v; syncBudgetFromItems(k); } }
-      else S.settings.budgets[k] = v;
-      markDirty([], true); toast('预算已改成 ' + yen(v)); render(); break;
+      const inCur = (cur) => cur === 'CNY' && fromJ(v, 'CNY') != null ? Math.round(fromJ(v, 'CNY')) : v;
+      if (sub) { const it = ((S.settings.budgetItems||{})[k]||[]).find(i=>i.id===sub); if (it) it.amt = inCur(it.cur); }
+      else { S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k] || { cur:'JPY' }; S.settings.budgetRaw[k] = { v: inCur(old.cur), cur: old.cur || 'JPY' }; }
+      recomputeBudgets(); markDirty([], true); toast('预算已改成 ' + (rmb(v) || yen(v))); render(); break;
+    }
+    case 'fetch-rate': {
+      b.disabled = true; b.textContent = '获取中…';
+      fetchCnyRate().then(({rate, date})=>{ S.settings.rates = S.settings.rates || {}; S.settings.rates.CNY = rate; recomputeBudgets(); markDirty([], true); toast('1 人民币 = ' + rate + ' 日元' + (date ? '（' + date + ' 的参考汇率）' : '')); render(); })
+        .catch(()=>{ toast('暂时拿不到汇率，请手动填一下'); b.disabled = false; b.textContent = '获取今天的汇率'; });
+      break;
     }
     case 'bi-add': {
       const k = b.dataset.k; S.settings.budgetItems = S.settings.budgetItems || {};
       const list = S.settings.budgetItems[k] || (S.settings.budgetItems[k] = []);
-      if (!list.length && +S.settings.budgets[k] > 0) list.push({ id:'b'+rid(), name:'', amt:+S.settings.budgets[k] });
-      list.push({ id:'b'+rid(), name:'', amt:0 });
+      const raw = (S.settings.budgetRaw||{})[k];
+      if (!list.length && raw && +raw.v > 0) list.push({ id:'b'+rid(), name:'', amt:+raw.v, cur: raw.cur || 'JPY' });
+      if (S.settings.budgetRaw) delete S.settings.budgetRaw[k];
+      list.push({ id:'b'+rid(), name:'', amt:0, cur: (raw && raw.cur) || S.settings.budgetDefCur || 'JPY' });
       syncBudgetFromItems(k); markDirty([], true); render();
       setTimeout(()=>{ const ins = document.querySelectorAll('input[data-bi="'+k+'"][data-bk="name"]'); const el = ins[ins.length-1]; if (el) el.focus(); }, 30);
       break;
@@ -2217,7 +2239,7 @@ document.addEventListener('change', e=>{
   if (t.id === 'importSrc') { S.importSrc = t.value; reparse(); render(); return; }
   if (t.id === 'newSrcType') { S.newSrc.type = t.value; reparse(); render(); return; }
   if (t.id === 'newSrcCur') { S.newSrc.cur = t.value; render(); return; }
-  if (t.dataset.rate) { const v = +t.value; S.settings.rates = S.settings.rates || {}; if (v>0) S.settings.rates[t.dataset.rate] = v; else delete S.settings.rates[t.dataset.rate]; markDirty([], true); render(); return; }
+  if (t.dataset.rate) { const v = +t.value; S.settings.rates = S.settings.rates || {}; if (v>0) S.settings.rates[t.dataset.rate] = v; else delete S.settings.rates[t.dataset.rate]; recomputeBudgets(); markDirty([], true); render(); return; }
   if (t.dataset.srccur) { const s = S.sources.find(s=>s.id===t.dataset.srccur); if (s){ s.cur = t.value; stamp(s); runAnalyze(); render(); } return; }
   if (t.id === 'file') { handleFiles([...t.files]); t.value=''; return; }
   if (t.id === 'restoreFile') { restoreFromFile(t.files[0]); t.value=''; return; }
@@ -2255,10 +2277,21 @@ document.addEventListener('change', e=>{
   if (t.dataset.fx) { const f = S.settings.fixed.find(f=>f.id===t.dataset.fx); if (f){ const k=t.dataset.k; f[k] = k==='amt' ? (+t.value||0) : t.value; markDirty([], true); if (k==='amt') render(); } return; }
   if (t.dataset.bi) {
     const k = t.dataset.bi, list = (S.settings.budgetItems || {})[k] || [], x = list.find(i=>i.id===t.dataset.bid);
-    if (x) { if (t.dataset.bk === 'amt') x.amt = +t.value || 0; else x.name = t.value.trim(); syncBudgetFromItems(k); markDirty([], true); if (t.dataset.bk === 'amt') render(); }
+    if (x) {
+      const bk = t.dataset.bk;
+      if (bk === 'amt') x.amt = +t.value || 0;
+      else if (bk === 'cur') { x.cur = t.value; S.settings.budgetDefCur = t.value; }
+      else if (bk === 'kw') x.kw = t.value.trim();
+      else x.name = t.value.trim();
+      recomputeBudgets(); markDirty([], true);
+      if (bk === 'amt' || bk === 'cur') render();
+      else if (bk === 'kw') { const n = S.txns.filter(q=>q.o && q.st==='ok' && q.c===k && (subInfo(q)||{}).how==='kw' && subInfo(q).id===x.id).length; if (n) toast('按关键词，已有 ' + n + ' 笔自动归到「' + (x.name||'这个小项') + '」'); }
+    }
     return;
   }
-  if (t.dataset.budget) { const v = +t.value; if (v>0) S.settings.budgets[t.dataset.budget] = v; else delete S.settings.budgets[t.dataset.budget]; markDirty([], true); render(); return; }
+  if (t.dataset.budget) { const k = t.dataset.budget, v = +t.value; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k]; if (v > 0) S.settings.budgetRaw[k] = { v, cur: (old && old.cur) || S.settings.budgetDefCur || 'JPY' }; else delete S.settings.budgetRaw[k]; recomputeBudgets(); markDirty([], true); render(); return; }
+  if (t.dataset.bcur) { const k = t.dataset.bcur; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k] || { v:0 }; S.settings.budgetRaw[k] = { v: old.v, cur: t.value }; S.settings.budgetDefCur = t.value; recomputeBudgets(); markDirty([], true); render(); return; }
+  if (t.id === 'budgetRate') { const v = +t.value; S.settings.rates = S.settings.rates || {}; if (v > 0) S.settings.rates.CNY = v; else delete S.settings.rates.CNY; recomputeBudgets(); markDirty([], true); render(); return; }
 });
 document.addEventListener('input', e=>{
   const t = e.target;
@@ -2271,19 +2304,49 @@ document.addEventListener('drop', e=>{ const d = e.target.closest && e.target.cl
 $('#savePill').addEventListener('click', ()=>{ go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); });
 $('#prevM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,-1); S.year = null; render(); });
 $('#nextM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,1); S.year = null; render(); });
-function subOf(x){
+function subInfo(x){
   const items = (S.settings.budgetItems || {})[x.c];
-  if (!items || !items.length || !x.o) return null;
-  if (x.sb && items.some(i=>i.id===x.sb)) return x.sb;
-  if (x.sb === '-') return null;
+  if (!items || !items.length || !x.o || x.sb === '-') return null;
+  if (x.sb && items.some(i=>i.id===x.sb)) return { id:x.sb, how:'manual' };
   const l = (S.settings.learnedSub || {})[learnKey(x.t)];
-  return l && items.some(i=>i.id===l) ? l : null;
+  if (l && items.some(i=>i.id===l)) return { id:l, how:'learned' };
+  const n = norm(x.t);
+  for (const i of items) {
+    const kws = String(i.kw||'').split(/[,，、;；\n]+/).map(k=>norm(k)).filter(k=>k.length >= 2 || /[\u3040-\u9fff]/.test(k));
+    if (kws.some(k=>kwHit(x.t, n, k))) return { id:i.id, how:'kw' };
+  }
+  return null;
 }
-function syncBudgetFromItems(k){
-  const list = (S.settings.budgetItems || {})[k];
-  if (!list) return;
-  const sum = list.reduce((a,x)=>a+(+x.amt||0),0);
-  if (sum > 0) S.settings.budgets[k] = sum; else delete S.settings.budgets[k];
+function subOf(x){ const r = subInfo(x); return r ? r.id : null; }
+function toJ(v, cur){ v = +v || 0; if (!cur || cur === 'JPY') return v; const r = +(S.settings.rates||{})[cur]; return r > 0 ? v * r : null; }
+function fromJ(vj, cur){ if (!cur || cur === 'JPY') return vj; const r = +(S.settings.rates||{})[cur]; return r > 0 ? vj / r : null; }
+function rmb(vj){ const r = +(S.settings.rates||{}).CNY; return r > 0 ? Math.round(vj / r).toLocaleString('zh-CN') + ' 元' : null; }
+function recomputeBudgets(){
+  S.settings.budgetRaw = S.settings.budgetRaw || {};
+  const Rw = S.settings.budgetRaw, BI = S.settings.budgetItems || {};
+  for (const [k,v] of Object.entries(S.settings.budgets||{})) if (!Rw[k] && !(BI[k] && BI[k].length) && +v > 0) Rw[k] = { v:+v, cur:'JPY' };
+  const out = {}; let missing = false;
+  for (const k of new Set([...Object.keys(Rw), ...Object.keys(BI)])) {
+    const items = BI[k];
+    if (items && items.length) {
+      let sum = 0;
+      for (const i of items) { const j = toJ(i.amt, i.cur); i.amtJ = j; if (j == null) { if (+i.amt > 0) missing = true; continue; } sum += j; }
+      if (sum > 0) out[k] = Math.round(sum);
+    } else if (Rw[k] && +Rw[k].v > 0) {
+      const j = toJ(Rw[k].v, Rw[k].cur);
+      if (j == null) missing = true; else out[k] = Math.round(j);
+    }
+  }
+  S.settings.budgets = out; S.budgetRateMissing = missing;
+}
+function syncBudgetFromItems(){ recomputeBudgets(); }
+async function fetchCnyRate(){
+  const urls = [['https://api.frankfurter.dev/v1/latest?base=CNY&symbols=JPY', j=>j && j.rates && j.rates.JPY, j=>j.date],
+                ['https://api.frankfurter.app/latest?from=CNY&to=JPY', j=>j && j.rates && j.rates.JPY, j=>j.date]];
+  for (const [u, pick, dt] of urls) {
+    try { const r = await fetch(u, { cache:'no-store' }); if (!r.ok) continue; const j = await r.json(); const v = +pick(j); if (v > 0) return { rate: Math.round(v*100)/100, date: dt(j) || '' }; } catch(e){}
+  }
+  throw new Error('拿不到汇率');
 }
 function scrollAssets(){ setTimeout(()=>{ const el = $('#assets'); if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({block:'start'}); }, 20); }
 function download(name, text, type){
