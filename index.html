@@ -174,6 +174,11 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
 .subbar .track{grid-column:1 / 3;height:5px;margin-top:0}
 .bcat{border:1px solid var(--line);border-radius:8px;padding:6px 8px;display:grid;gap:6px;align-content:start}
 .bcat.open{background:var(--bg)}
+.btoggle{appearance:none;border:0;background:none;font:inherit;color:inherit;width:100%;padding:2px 0;cursor:pointer;text-align:left}
+.btoggle:hover .chev,.btoggle:hover{color:var(--accent)}
+.chev{display:inline-block;width:14px;color:var(--muted)}
+.bsum{padding-left:14px}
+.bfoot{display:flex;gap:6px;justify-content:flex-end}
 .bhead{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
 .bhead input{width:110px}
 .bsub{display:grid;grid-template-columns:minmax(0,1fr) 84px 74px 30px;gap:6px;align-items:center;padding-bottom:6px;border-bottom:1px dashed var(--line)}
@@ -2066,20 +2071,27 @@ function viewPlan(){
       ? `<span class="num" title="由下面的小项相加">${both(S.settings.budgets[k]||0)}</span>`
       : `<span class="bin"><input type="number" min="0" step="100" data-budget="${k}" value="${raw&&raw.v?raw.v:''}" placeholder="—" aria-label="${esc(n)}预算">${unitSel(`data-bcur="${k}"`, (raw&&raw.cur)||DC)}</span>`;
     const rows = items.map(x=>`<div class="bsub"><input type="text" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="name" value="${esc(x.name||'')}" placeholder="比如：午饭、咖啡" aria-label="小项名称"><input type="number" min="0" step="100" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="amt" value="${x.amt||''}" placeholder="金额" aria-label="小项金额">${unitSel(`data-bi="${k}" data-bid="${esc(x.id)}" data-bk="cur"`, x.cur||'JPY')}<button class="iconbtn" data-act="bi-del" data-k="${k}" data-id="${esc(x.id)}" aria-label="删除这一项">×</button><input type="text" class="bkw" data-bi="${k}" data-bid="${esc(x.id)}" data-bk="kw" value="${esc(x.kw||'')}" placeholder="自动归类关键词，用逗号分开，如：カフェ, コーヒー, STARBUCKS" aria-label="自动归类关键词"></div>`).join('');
-    return `<div class="bcat${items.length?' open':''}"><div class="bhead"><span>${esc(n)}</span><span class="acts">${head}<button class="btn sm" data-act="bi-add" data-k="${k}" title="把这个预算拆成几项">＋ 小项</button></span></div>${rows}</div>`;
+    if (!items.length) return `<div class="bcat"><div class="bhead"><span>${esc(n)}</span><span class="acts">${head}<button class="btn sm" data-act="bi-add" data-k="${k}" title="把这个预算拆成几项">＋ 小项</button></span></div></div>`;
+    const open = bOpen().has(k);
+    const names = items.map(x=>x.name||'未命名').join('、');
+    return `<div class="bcat has${open?' open':''}">
+      <button class="bhead btoggle" data-act="bi-toggle" data-k="${k}" aria-expanded="${open}"><span><span class="chev">${open?'▾':'▸'}</span>${esc(n)} <span class="muted small">${items.length} 项</span></span><span class="num">${head}</span></button>
+      ${open ? rows + `<div class="bfoot"><button class="btn sm" data-act="bi-add" data-k="${k}">＋ 再加一项</button><button class="btn sm" data-act="bi-toggle" data-k="${k}">收起</button></div>` : `<div class="bsum small muted">${esc(names.length>40?names.slice(0,40)+'…':names)}</div>`}
+    </div>`;
   }).join('');
   const sources = S.sources.map(s=>{ const n = S.txns.filter(x=>x.s===s.id).length; return `<div class="li"><span>${esc(s.name)} <span class="muted small">${n} 笔</span></span><span class="acts"><select data-srccur="${esc(s.id)}" aria-label="币种">${CURS.map(([k,nm])=>`<option value="${k}" ${(s.cur||'JPY')===k?'selected':''}>${nm}</option>`).join('')}</select><select data-srctype="${esc(s.id)}" aria-label="类型">${SRC_TYPES.map(([k,nm])=>`<option value="${k}" ${s.type===k?'selected':''}>${nm}</option>`).join('')}</select><button class="btn sm danger" data-act="del-src" data-id="${esc(s.id)}">删除来源和它的记录</button></span></div>`; }).join('') || '<div class="empty">还没有来源，导入账单时会自动建立</div>';
   return `<div class="steps">
     ${syncCard()}
     <div class="card"><h2>固定支出</h2><p class="h2sub">房租、水电、手机、订阅这类每月都有的。「关键词」写账单里会出现的字，比如 家賃、ドコモ、NETFLIX，我每月帮你核对有没有扣。</p>
       ${fixed}<div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fixed">＋ 加一项</button><span class="small">每月固定 <b class="num">${yen(fixedTotal)}</b>${avgInc?` · 约占收入 ${Math.round(fixedTotal/avgInc*100)}%`:''}</span></div></div>
-    <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。金额可以用日元或人民币填，会按汇率自动换算。</p>
+    <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。金额可以用日元、人民币或美元填，会按汇率自动换算。有小项的分类点一下就能展开或收起。</p>
       <div class="fields" style="margin:0 0 12px">
         <label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="CNY" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label>
         <label class="field">1 美元 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="USD" value="${+(S.settings.rates||{}).USD||''}" placeholder="例如 150" style="width:100px"> 日元</span></label>
         <button class="btn sm" data-act="fetch-rate">获取今天的汇率</button>
         ${Object.keys(S.settings.ratesAt||{}).length ? `<span class="small muted">上次更新：${Object.entries(S.settings.ratesAt).map(([c,d])=>DISP[c]?DISP[c][0]+' '+d:'').filter(Boolean).join('，')}</span>` : ''}</div>
       ${S.budgetRateMissing ? `<div class="alert warn" style="margin:0 0 12px"><span>有用人民币或美元填的预算，但对应的汇率还没填，这部分暂时没算进去。</span></div>` : ''}
+      ${Object.values(BI).some(l=>l&&l.length) ? `<div class="toolbar" style="margin:0 0 8px"><button class="btn sm" data-act="bi-openall">全部展开</button><button class="btn sm" data-act="bi-closeall">全部收起</button></div>` : ''}
       <div class="budgetgrid">${budgets}</div>
       <p class="small muted" style="margin:8px 0 0">点「＋ 小项」可以把一个分类的预算拆开写清楚，比如外食拆成「午饭 15,000 · 咖啡 3,000」。有小项时，这个分类的预算就是小项加起来的总数。</p>
       ${cnyRate ? `<div class="catbar" style="margin:14px 0 0;display:block"><div style="font-size:15px">预算合计 <b class="num" style="font-size:20px">${rmb(budgetTotal)}</b> <span class="muted small">≈ ${yenRaw(budgetTotal)}</span></div>${avgInc?`<div class="small" style="margin-top:4px">加上没设预算分类里的固定支出，每月计划花 <b class="num">${rmb(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${rmb(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${rmb(avgInc-planned)}</b></div>`:''}<div class="small muted" style="margin-top:4px">按 1 人民币 = ${cnyRate} 日元${+(S.settings.rates||{}).USD ? '、1 美元 = ' + (+S.settings.rates.USD) + ' 日元' : ''}换算</div></div>`
@@ -2268,7 +2280,11 @@ document.addEventListener('click', e=>{
       });
       break;
     }
+    case 'bi-toggle': { const k = b.dataset.k, o = bOpen(); if (o.has(k)) o.delete(k); else o.add(k); saveBOpen(); render(); break; }
+    case 'bi-openall': { const o = bOpen(); for (const [k,l] of Object.entries(S.settings.budgetItems||{})) if (l && l.length) o.add(k); saveBOpen(); render(); break; }
+    case 'bi-closeall': bOpen().clear(); saveBOpen(); render(); break;
     case 'bi-add': {
+      bOpen().add(b.dataset.k); saveBOpen();
       const k = b.dataset.k; S.settings.budgetItems = S.settings.budgetItems || {};
       const list = S.settings.budgetItems[k] || (S.settings.budgetItems[k] = []);
       const raw = (S.settings.budgetRaw||{})[k];
@@ -2428,6 +2444,9 @@ function staleRates(){
   }
   return out;
 }
+let _bOpen = null;
+function bOpen(){ if (!_bOpen) { try { _bOpen = new Set(JSON.parse(localStorage.getItem('mml-bopen') || '[]')); } catch(e){ _bOpen = new Set(); } } return _bOpen; }
+function saveBOpen(){ try { localStorage.setItem('mml-bopen', JSON.stringify([...bOpen()])); } catch(e){} }
 function syncBudgetFromItems(){ recomputeBudgets(); }
 async function fetchRate(base){
   const urls = ['https://api.frankfurter.dev/v1/latest?base=' + base + '&symbols=JPY', 'https://api.frankfurter.app/latest?from=' + base + '&to=JPY'];
