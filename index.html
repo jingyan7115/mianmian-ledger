@@ -45,6 +45,7 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-
 .month b{font-family:var(--font-d);font-size:19px;min-width:120px;text-align:center}
 .iconbtn{border:1px solid var(--line);background:var(--surface);color:var(--ink);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px}
 .iconbtn:hover{border-color:var(--accent)}
+.dispsel select{font-size:12px;padding:4px 6px;border-radius:999px}
 .savepill{cursor:pointer;font-size:12px;color:var(--muted);border:1px solid var(--line);padding:3px 10px;border-radius:999px;background:var(--surface);white-space:nowrap}
 .savepill.ok{color:var(--good)} .savepill.err{color:var(--bad);border-color:var(--bad)}
 nav.tabs{display:flex;gap:4px;margin:18px 0 16px;border-bottom:1px solid var(--line);overflow-x:auto}
@@ -193,6 +194,7 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
       <button class="iconbtn" id="prevM" aria-label="上个月">‹</button>
       <b id="monthLabel">—</b>
       <button class="iconbtn" id="nextM" aria-label="下个月">›</button>
+      <label class="dispsel" title="显示用的货币"><select id="dispCur" aria-label="显示货币"><option value="JPY">¥ 日元显示</option><option value="CNY">元 人民币显示</option><option value="USD">$ 美元显示</option></select></label>
       <span class="savepill" id="savePill">连接中…</span>
     </div>
   </header>
@@ -746,7 +748,17 @@ function fixedStatus(fixed, txns, ym, conv){
 // ================= app =================
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const yen = n => (n<0?'−':'') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+const yenRaw = n => (n<0?'−':'') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+const DISP = { JPY:['日元','¥'], CNY:['人民币','元'], USD:['美元','$'] };
+function dispCur(){ const c = (typeof S !== 'undefined' && S.settings && S.settings.dispCur) || 'JPY'; if (c === 'JPY') return 'JPY'; const r = +((S.settings.rates||{})[c]); return r > 0 ? c : 'JPY'; }
+function dv(n){ const c = dispCur(); return c === 'JPY' ? n : n / +S.settings.rates[c]; }
+const yen = n => {
+  const c = dispCur();
+  if (c === 'JPY') return yenRaw(n);
+  const v = dv(n), a = Math.abs(v), sgn = v < 0 ? '−' : '';
+  const num = a.toLocaleString(c === 'CNY' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 0, maximumFractionDigits: a >= 100 ? 0 : (c === 'CNY' ? 1 : 2) });
+  return c === 'CNY' ? sgn + num + ' 元' : sgn + '$' + num;
+};
 const fmtMonth = ym => { const [y,m] = ym.split('-'); return y + '年' + (+m) + '月'; };
 const CURS = [['JPY','日元 JPY'],['CNY','人民币 CNY'],['USD','美元 USD']];
 function assetOfSrc(id){ return id && id.startsWith('as-') ? (S.assets||[]).find(a=>'as-'+a.id===id) : null; }
@@ -799,14 +811,14 @@ function compactTx(x){
   return y;
 }
 function stateBody(compact){
-  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
            imports:S.settings.imports.slice(-200), txns: compact ? S.txns.map(compactTx) : S.txns, assets:S.assets||[], del:S.del };
 }
 function applyState(b){
   if (!b) return;
   S.sources = Array.isArray(b.sources) ? b.sources : [];
   const st = b.settings || {};
-  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
   S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
   S.txns = Array.isArray(b.txns) ? b.txns : [];
   S.assets = Array.isArray(b.assets) ? b.assets : [];
@@ -1147,6 +1159,7 @@ function clearDemo(){
 // ---------- render ----------
 function render(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===S.view));
+  const ds = $('#dispCur'); if (ds) ds.value = dispCur();
   $('#monthLabel').textContent = fmtMonth(S.month);
   $('#demoBar').hidden = !S.demo;
   const v = S.view;
@@ -1244,7 +1257,8 @@ function trendCard(){
   const CV = conv();
   const data = months.map(ym=>{ const M = monthSummary(S.txns, ym, CV); return { ym, inc:M.income, exp:M.expense, net:M.net, n:M.count }; });
   if (data.filter(d=>d.n).length < 1) return '';
-  const max = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
+  data.forEach(d=>{ d.ci = dv(d.inc); d.ce = dv(d.exp); });
+  const max = Math.max(1, ...data.map(d=>Math.max(d.ci,d.ce)));
   const step = niceStep(max/3), top = Math.ceil(max/step)*step;
   const W=900, H=230, padL=56, padB=26, padT=26, cw=(W-padL-8)/data.length, bw=Math.min(30,cw/3.4);
   const short = v => v >= 10000 ? (Math.round(v/1000)/10) + '万' : Math.round(v).toLocaleString('ja-JP');
@@ -1255,13 +1269,13 @@ function trendCard(){
     const cx = padL + cw*i + cw/2;
     const on = d.ym===S.month;
     if (d.n){
-      g += `<text x="${cx-bw/2-3}" y="${yv(d.inc)-5}" text-anchor="middle" style="fill:var(--good);font-weight:600">${short(d.inc)}</text><text x="${cx+bw/2+3}" y="${yv(d.exp)-5}" text-anchor="middle" style="fill:var(--accent);font-weight:600">${short(d.exp)}</text>`;
-      g += `<rect x="${cx-bw-3}" y="${yv(d.inc)}" width="${bw}" height="${Math.max(0,yv(0)-yv(d.inc))}" rx="3" fill="var(--good)" opacity="${on?1:.55}"><title>${fmtMonth(d.ym)} 收入 ${yen(d.inc)}</title></rect>`;
-      g += `<rect x="${cx+3}" y="${yv(d.exp)}" width="${bw}" height="${Math.max(0,yv(0)-yv(d.exp))}" rx="3" fill="var(--accent)" opacity="${on?1:.55}"><title>${fmtMonth(d.ym)} 支出 ${yen(d.exp)}</title></rect>`;
+      g += `<text x="${cx-bw/2-3}" y="${yv(d.ci)-5}" text-anchor="middle" style="fill:var(--good);font-weight:600">${short(d.ci)}</text><text x="${cx+bw/2+3}" y="${yv(d.ce)-5}" text-anchor="middle" style="fill:var(--accent);font-weight:600">${short(d.ce)}</text>`;
+      g += `<rect x="${cx-bw-3}" y="${yv(d.ci)}" width="${bw}" height="${Math.max(0,yv(0)-yv(d.ci))}" rx="3" fill="var(--good)" opacity="${on?1:.55}"><title>${fmtMonth(d.ym)} 收入 ${yen(d.inc)}</title></rect>`;
+      g += `<rect x="${cx+3}" y="${yv(d.ce)}" width="${bw}" height="${Math.max(0,yv(0)-yv(d.ce))}" rx="3" fill="var(--accent)" opacity="${on?1:.55}"><title>${fmtMonth(d.ym)} 支出 ${yen(d.exp)}</title></rect>`;
     }
     g += `<text x="${cx}" y="${H-8}" text-anchor="middle" ${on?'style="fill:var(--ink);font-weight:700"':''}>${+d.ym.slice(5)}月</text>`;
   });
-  return `<div class="card" style="margin-top:14px"><h2>近 6 个月</h2><p class="h2sub">收入和实际支出（已去重、去转账）</p><svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="近6个月收入与支出">${g}</svg><div class="legend"><span><i style="background:var(--good)"></i>收入</span><span><i style="background:var(--accent)"></i>实际支出</span><span>单位：日元</span></div>
+  return `<div class="card" style="margin-top:14px"><h2>近 6 个月</h2><p class="h2sub">收入和实际支出（已去重、去转账）</p><svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="近6个月收入与支出">${g}</svg><div class="legend"><span><i style="background:var(--good)"></i>收入</span><span><i style="background:var(--accent)"></i>实际支出</span><span>单位：${DISP[dispCur()][0]}</span></div>
     <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>月份</th><th class="r">收入</th><th class="r">实际支出</th><th class="r">结余</th></tr></thead><tbody>${data.filter(d=>d.n).map(d=>`<tr${d.ym===S.month?' style="font-weight:600"':''}><td>${fmtMonth(d.ym)}</td><td class="r num">${yen(d.inc)}</td><td class="r num">${yen(d.exp)}</td><td class="r num ${d.net>=0?'pos':'neg'}">${yen(d.net)}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 const ASSET_GROUPS = [['save','一、储蓄'],['invest','二、投资']];
@@ -1347,7 +1361,7 @@ function assetCard(){
       const open = F.id === it.id ? itemForm(F.mode, it) : '';
       return `<div class="aitem"><span class="sw" style="background:${colorOf[it.id]}"></span>
         <div><div class="nm">${esc(assetLabel(it))}</div><div class="sub">${esc(it.memo||'')}${it.memo?' · ':''}${last?'最近更新 '+last.d:'还没有金额'}${yIn?' · 今年存入 '+fmtCur(yIn, it.cur):''}</div></div>
-        <div class="val"><b class="num">${o.raw==null?'—':fmtCur(o.raw, it.cur)}</b>${it.cur&&it.cur!=='JPY'&&o.jpy!=null?`<div class="sub num">≈ ${yen(o.jpy)}</div>`:''}</div>
+        <div class="val"><b class="num">${o.raw==null?'—':fmtCur(o.raw, it.cur)}</b>${it.cur&&it.cur!=='JPY'&&it.cur!==dispCur()&&o.jpy!=null?`<div class="sub num">≈ ${yen(o.jpy)}</div>`:''}</div>
         <div class="acts">${it.g==='save'?`<button class="btn sm" data-act="asset-inc" data-id="${esc(it.id)}">＋ 记收入</button>`:''}<button class="btn sm" data-act="asset-snap" data-id="${esc(it.id)}">更新金额</button><button class="btn sm" data-act="asset-edit" data-id="${esc(it.id)}">编辑</button><button class="btn sm danger" data-act="asset-del" data-id="${esc(it.id)}">删除</button></div>
         ${open}</div>`;
     }).join('');
@@ -2026,7 +2040,7 @@ function viewPlan(){
   const BI = S.settings.budgetItems || {}, RW = S.settings.budgetRaw || {}, DC = S.settings.budgetDefCur || 'JPY';
   const cnyRate = +(S.settings.rates||{}).CNY || 0;
   const unitSel = (attrs, cur) => `<select ${attrs} class="unit" aria-label="单位"><option value="JPY" ${cur==='JPY'?'selected':''}>日元</option><option value="CNY" ${cur==='CNY'?'selected':''}>人民币</option><option value="USD" ${cur==='USD'?'selected':''}>美元</option></select>`;
-  const both = vj => { const r = rmb(vj); return r ? `${r} <span class="muted small">≈ ${yen(vj)}</span>` : yen(vj); };
+  const both = vj => { const r = rmb(vj); return r ? `${r} <span class="muted small">≈ ${yenRaw(vj)}</span>` : yenRaw(vj); };
   const budgets = EXP_CATS.filter(([k])=>!['card','wallet','cash','reimb'].includes(k)).map(([k,n])=>{
     const items = BI[k] || [];
     const raw = RW[k];
@@ -2049,7 +2063,7 @@ function viewPlan(){
       ${S.budgetRateMissing ? `<div class="alert warn" style="margin:0 0 12px"><span>有用人民币或美元填的预算，但对应的汇率还没填，这部分暂时没算进去。</span></div>` : ''}
       <div class="budgetgrid">${budgets}</div>
       <p class="small muted" style="margin:8px 0 0">点「＋ 小项」可以把一个分类的预算拆开写清楚，比如外食拆成「午饭 15,000 · 咖啡 3,000」。有小项时，这个分类的预算就是小项加起来的总数。</p>
-      ${cnyRate ? `<div class="catbar" style="margin:14px 0 0;display:block"><div style="font-size:15px">预算合计 <b class="num" style="font-size:20px">${rmb(budgetTotal)}</b> <span class="muted small">≈ ${yen(budgetTotal)}</span></div>${avgInc?`<div class="small" style="margin-top:4px">加上没设预算分类里的固定支出，每月计划花 <b class="num">${rmb(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${rmb(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${rmb(avgInc-planned)}</b></div>`:''}<div class="small muted" style="margin-top:4px">按 1 人民币 = ${cnyRate} 日元${+(S.settings.rates||{}).USD ? '、1 美元 = ' + (+S.settings.rates.USD) + ' 日元' : ''}换算</div></div>`
+      ${cnyRate ? `<div class="catbar" style="margin:14px 0 0;display:block"><div style="font-size:15px">预算合计 <b class="num" style="font-size:20px">${rmb(budgetTotal)}</b> <span class="muted small">≈ ${yenRaw(budgetTotal)}</span></div>${avgInc?`<div class="small" style="margin-top:4px">加上没设预算分类里的固定支出，每月计划花 <b class="num">${rmb(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${rmb(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${rmb(avgInc-planned)}</b></div>`:''}<div class="small muted" style="margin-top:4px">按 1 人民币 = ${cnyRate} 日元${+(S.settings.rates||{}).USD ? '、1 美元 = ' + (+S.settings.rates.USD) + ' 日元' : ''}换算</div></div>`
         : `<p class="small" style="margin:12px 0 0">预算合计 <b class="num">${yen(budgetTotal)}</b>（填上面的汇率以后，会用人民币显示）${avgInc?`。加上没设预算分类里的固定支出，每月计划花 <b class="num">${yen(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${yen(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${yen(avgInc-planned)}</b>`:''}</p>`}</div>
     ${ratesCard()}
     <div class="card"><h2>账单来源</h2><p class="h2sub">类型会影响查重和转账判断：银行里的「カード会社」扣款、给 PayPay 的充值，只有知道哪些是卡、哪些是钱包才能排除。</p><div class="list">${sources}</div></div>
@@ -2245,6 +2259,11 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('change', e=>{
   const t = e.target;
+  if (t.id === 'dispCur') {
+    const c = t.value;
+    if (c !== 'JPY' && !(+(S.settings.rates||{})[c] > 0)) { toast('先在「固定支出与预算」里填一下' + DISP[c][0] + '的汇率'); t.value = dispCur(); go('plan'); return; }
+    S.settings.dispCur = c; markDirty([], true); render(); toast('现在用' + DISP[c][0] + '显示，按汇率从日元换算'); return;
+  }
   if (t.id === 'importSrc') { S.importSrc = t.value; reparse(); render(); return; }
   if (t.id === 'newSrcType') { S.newSrc.type = t.value; reparse(); render(); return; }
   if (t.id === 'newSrcCur') { S.newSrc.cur = t.value; render(); return; }
