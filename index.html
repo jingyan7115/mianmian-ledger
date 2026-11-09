@@ -163,6 +163,9 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
 .planrow input,.planrow select{width:100%}
 @media (max-width:640px){.planrow{grid-template-columns:1fr 1fr}.planrow .x{justify-self:end}}
 .budgetgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;align-items:start}
+.subbars{margin:6px 0 2px 12px;padding-left:10px;border-left:2px solid var(--line);display:grid;gap:6px}
+.subbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;font-size:13px}
+.subbar .track{grid-column:1 / 3;height:5px;margin-top:0}
 .bcat{border:1px solid var(--line);border-radius:8px;padding:6px 8px;display:grid;gap:6px;align-content:start}
 .bcat.open{background:var(--bg)}
 .bhead{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
@@ -791,14 +794,14 @@ function compactTx(x){
   return y;
 }
 function stateBody(compact){
-  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
            imports:S.settings.imports.slice(-200), txns: compact ? S.txns.map(compactTx) : S.txns, assets:S.assets||[], del:S.del };
 }
 function applyState(b){
   if (!b) return;
   S.sources = Array.isArray(b.sources) ? b.sources : [];
   const st = b.settings || {};
-  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
   S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
   S.txns = Array.isArray(b.txns) ? b.txns : [];
   S.assets = Array.isArray(b.assets) ? b.assets : [];
@@ -1181,9 +1184,16 @@ function viewOverview(){
     let pct, cls, row2;
     if (c.budget){ pct = Math.min(100, c.spent/c.budget*100); const r = c.spent/c.budget; cls = r>1?'bad':r>0.8?'warn':'good'; row2 = r>1 ? `超出预算 ${yen(c.spent-c.budget)}` : `还剩 ${yen(c.budget-c.spent)}`; }
     else { pct = c.spent/maxSpent*100; cls=''; row2 = '没设预算'; }
-    const subs = ((S.settings.budgetItems||{})[c.k]||[]).filter(x=>+x.amt>0);
-    if (subs.length) row2 += ` · 预算构成：${subs.map(x=>esc(x.name||'未命名')+' '+yen(x.amt)).join('、')}`;
-    return `<div class="bar"><div class="row1"><button class="catlink" data-catgo="${c.k}" title="看这个分类的全部明细">${esc(c.n)} ›</button><span class="amt num">${yen(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div></div>`;
+    const subs = ((S.settings.budgetItems||{})[c.k]||[]);
+    let subHtml = '';
+    if (subs.length) {
+      const spentBy = {}; let unassigned = 0;
+      for (const x of S.txns) { if (ymOf(x.d)!==S.month || x.st!=='ok' || !x.o || x.c!==c.k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) spentBy[sid] = (spentBy[sid]||0) + v; else unassigned += v; }
+      subHtml = `<div class="subbars">${subs.map(i=>{ const sp = spentBy[i.id]||0, bud = +i.amt||0, r = bud ? sp/bud : 0; const cl = !bud ? '' : r>1 ? 'bad' : r>0.8 ? 'warn' : 'good';
+        return `<div class="subbar"><span class="nm">${esc(i.name||'未命名')}</span><span class="amt num">${yen(sp)}${bud?` <span class="muted">/ ${yen(bud)}</span>`:''}${bud&&sp>bud?` <span class="neg">超 ${yen(sp-bud)}</span>`:''}</span><div class="track"><div class="fill ${cl}" style="width:${bud?Math.min(100,r*100).toFixed(1):0}%"></div></div></div>`; }).join('')}
+        ${unassigned ? `<div class="subbar"><span class="nm muted">未指定小项</span><span class="amt num muted">${yen(unassigned)}</span><button class="btn sm" data-catgo="${c.k}" style="grid-column:1 / 3;justify-self:start">去指定</button></div>` : ''}</div>`;
+    }
+    return `<div class="bar"><div class="row1"><button class="catlink" data-catgo="${c.k}" title="看这个分类的全部明细">${esc(c.n)} ›</button><span class="amt num">${yen(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div>${subHtml}</div>`;
   }).join('') || '<div class="empty">这个月还没有计入的支出</div>';
   const refundLine = M.refund ? `<p class="small muted" style="margin:10px 0 0">已扣除退款 ${yen(M.refund)}</p>` : '';
 
@@ -1475,7 +1485,7 @@ function renderTxRows(){
     else { pill = x.m ? '<span class="pill ok">计入·已确认</span>' : '<span class="pill ok">计入</span>'; acts = `<button class="btn sm" data-act="set-dup" data-id="${x.i}">标为重复</button><button class="btn sm" data-act="set-xfer" data-id="${x.i}">标为转账</button>`; }
     const why = [x.sus && x._sw ? x._sw : x.w, x.bc ? '账单分类：' + x.bc : ''].filter(Boolean).join(' · ');
     const exc = x.st!=='ok';
-    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`<select data-cat="${x.i}" aria-label="分类">${opts}</select>`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
+    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`<select data-cat="${x.i}" aria-label="分类">${opts}</select>${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || !its || !its.length) return ''; const cur = subOf(x); return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
   }).join('');
   body.innerHTML = html || `<tr><td colspan="6" class="empty">没有符合条件的记录</td></tr>`;
 }
@@ -2186,6 +2196,16 @@ document.addEventListener('change', e=>{
     markDirty(ms, true); if (n) toast('同名商户另外 ' + n + ' 笔也改成了「' + CAT_NAME[t.value] + '」');
     if (S.incomeView || S.catFilter) renderTxView(); else renderTxRows(); return;
   }
+  if (t.dataset.sub) {
+    const x = S.txns.find(q=>q.i===t.dataset.sub); if (!x) return;
+    x.sb = t.value; stamp(x);
+    S.settings.learnedSub = S.settings.learnedSub || {};
+    const key = learnKey(x.t);
+    if (t.value === '-') delete S.settings.learnedSub[key]; else S.settings.learnedSub[key] = t.value;
+    const n = t.value === '-' ? 0 : S.txns.filter(q=>q!==x && q.o && q.c===x.c && !q.sb && learnKey(q.t)===key).length;
+    markDirty([], true); if (n) toast('同名商户另外 ' + n + ' 笔也归到了这个小项');
+    if (S.incomeView || S.catFilter) renderTxView(); else renderTxRows(); return;
+  }
   if (t.dataset.srctype) { const s = S.sources.find(s=>s.id===t.dataset.srctype); if (s){ s.type = t.value; stamp(s); runAnalyze(); } return; }
   if (t.dataset.fx) { const f = S.settings.fixed.find(f=>f.id===t.dataset.fx); if (f){ const k=t.dataset.k; f[k] = k==='amt' ? (+t.value||0) : t.value; markDirty([], true); if (k==='amt') render(); } return; }
   if (t.dataset.bi) {
@@ -2206,6 +2226,14 @@ document.addEventListener('drop', e=>{ const d = e.target.closest && e.target.cl
 $('#savePill').addEventListener('click', ()=>{ go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); });
 $('#prevM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,-1); S.year = null; render(); });
 $('#nextM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,1); S.year = null; render(); });
+function subOf(x){
+  const items = (S.settings.budgetItems || {})[x.c];
+  if (!items || !items.length || !x.o) return null;
+  if (x.sb && items.some(i=>i.id===x.sb)) return x.sb;
+  if (x.sb === '-') return null;
+  const l = (S.settings.learnedSub || {})[learnKey(x.t)];
+  return l && items.some(i=>i.id===l) ? l : null;
+}
 function syncBudgetFromItems(k){
   const list = (S.settings.budgetItems || {})[k];
   if (!list) return;
