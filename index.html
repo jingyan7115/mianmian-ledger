@@ -2025,7 +2025,7 @@ function viewPlan(){
   const planned = budgetTotal + fixedOutside;
   const BI = S.settings.budgetItems || {}, RW = S.settings.budgetRaw || {}, DC = S.settings.budgetDefCur || 'JPY';
   const cnyRate = +(S.settings.rates||{}).CNY || 0;
-  const unitSel = (attrs, cur) => `<select ${attrs} class="unit" aria-label="单位"><option value="JPY" ${cur==='JPY'?'selected':''}>日元</option><option value="CNY" ${cur==='CNY'?'selected':''}>人民币</option></select>`;
+  const unitSel = (attrs, cur) => `<select ${attrs} class="unit" aria-label="单位"><option value="JPY" ${cur==='JPY'?'selected':''}>日元</option><option value="CNY" ${cur==='CNY'?'selected':''}>人民币</option><option value="USD" ${cur==='USD'?'selected':''}>美元</option></select>`;
   const both = vj => { const r = rmb(vj); return r ? `${r} <span class="muted small">≈ ${yen(vj)}</span>` : yen(vj); };
   const budgets = EXP_CATS.filter(([k])=>!['card','wallet','cash','reimb'].includes(k)).map(([k,n])=>{
     const items = BI[k] || [];
@@ -2042,11 +2042,14 @@ function viewPlan(){
     <div class="card"><h2>固定支出</h2><p class="h2sub">房租、水电、手机、订阅这类每月都有的。「关键词」写账单里会出现的字，比如 家賃、ドコモ、NETFLIX，我每月帮你核对有没有扣。</p>
       ${fixed}<div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fixed">＋ 加一项</button><span class="small">每月固定 <b class="num">${yen(fixedTotal)}</b>${avgInc?` · 约占收入 ${Math.round(fixedTotal/avgInc*100)}%`:''}</span></div></div>
     <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。金额可以用日元或人民币填，会按汇率自动换算。</p>
-      <div class="fields" style="margin:0 0 12px"><label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" id="budgetRate" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label><button class="btn sm" data-act="fetch-rate">获取今天的汇率</button></div>
-      ${S.budgetRateMissing ? `<div class="alert warn" style="margin:0 0 12px"><span>有用人民币填的预算，但还没填汇率，这部分暂时没算进去。</span></div>` : ''}
+      <div class="fields" style="margin:0 0 12px">
+        <label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="CNY" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label>
+        <label class="field">1 美元 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="USD" value="${+(S.settings.rates||{}).USD||''}" placeholder="例如 150" style="width:100px"> 日元</span></label>
+        <button class="btn sm" data-act="fetch-rate">获取今天的汇率</button></div>
+      ${S.budgetRateMissing ? `<div class="alert warn" style="margin:0 0 12px"><span>有用人民币或美元填的预算，但对应的汇率还没填，这部分暂时没算进去。</span></div>` : ''}
       <div class="budgetgrid">${budgets}</div>
       <p class="small muted" style="margin:8px 0 0">点「＋ 小项」可以把一个分类的预算拆开写清楚，比如外食拆成「午饭 15,000 · 咖啡 3,000」。有小项时，这个分类的预算就是小项加起来的总数。</p>
-      ${cnyRate ? `<div class="catbar" style="margin:14px 0 0;display:block"><div style="font-size:15px">预算合计 <b class="num" style="font-size:20px">${rmb(budgetTotal)}</b> <span class="muted small">≈ ${yen(budgetTotal)}</span></div>${avgInc?`<div class="small" style="margin-top:4px">加上没设预算分类里的固定支出，每月计划花 <b class="num">${rmb(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${rmb(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${rmb(avgInc-planned)}</b></div>`:''}<div class="small muted" style="margin-top:4px">按 1 人民币 = ${cnyRate} 日元换算</div></div>`
+      ${cnyRate ? `<div class="catbar" style="margin:14px 0 0;display:block"><div style="font-size:15px">预算合计 <b class="num" style="font-size:20px">${rmb(budgetTotal)}</b> <span class="muted small">≈ ${yen(budgetTotal)}</span></div>${avgInc?`<div class="small" style="margin-top:4px">加上没设预算分类里的固定支出，每月计划花 <b class="num">${rmb(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${rmb(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${rmb(avgInc-planned)}</b></div>`:''}<div class="small muted" style="margin-top:4px">按 1 人民币 = ${cnyRate} 日元${+(S.settings.rates||{}).USD ? '、1 美元 = ' + (+S.settings.rates.USD) + ' 日元' : ''}换算</div></div>`
         : `<p class="small" style="margin:12px 0 0">预算合计 <b class="num">${yen(budgetTotal)}</b>（填上面的汇率以后，会用人民币显示）${avgInc?`。加上没设预算分类里的固定支出，每月计划花 <b class="num">${yen(planned)}</b>；近 ${months3.length} 个月平均收入 <span class="num">${yen(avgInc)}</span>，照这个计划每月约能存 <b class="num ${avgInc-planned>=0?'pos':'neg'}">${yen(avgInc-planned)}</b>`:''}</p>`}</div>
     ${ratesCard()}
     <div class="card"><h2>账单来源</h2><p class="h2sub">类型会影响查重和转账判断：银行里的「カード会社」扣款、给 PayPay 的充值，只有知道哪些是卡、哪些是钱包才能排除。</p><div class="list">${sources}</div></div>
@@ -2207,8 +2210,14 @@ document.addEventListener('click', e=>{
     }
     case 'fetch-rate': {
       b.disabled = true; b.textContent = '获取中…';
-      fetchCnyRate().then(({rate, date})=>{ S.settings.rates = S.settings.rates || {}; S.settings.rates.CNY = rate; recomputeBudgets(); markDirty([], true); toast('1 人民币 = ' + rate + ' 日元' + (date ? '（' + date + ' 的参考汇率）' : '')); render(); })
-        .catch(()=>{ toast('暂时拿不到汇率，请手动填一下'); b.disabled = false; b.textContent = '获取今天的汇率'; });
+      Promise.all([fetchRate('CNY'), fetchRate('USD')]).then(([c, u])=>{
+        if (!c && !u) { toast('暂时拿不到汇率，请手动填一下'); b.disabled = false; b.textContent = '获取今天的汇率'; return; }
+        S.settings.rates = S.settings.rates || {};
+        if (c) S.settings.rates.CNY = c.rate; if (u) S.settings.rates.USD = u.rate;
+        recomputeBudgets(); markDirty([], true);
+        toast([c ? '1 人民币 = ' + c.rate + ' 日元' : '', u ? '1 美元 = ' + u.rate + ' 日元' : ''].filter(Boolean).join(' · ') + ((c||u).date ? '（' + (c||u).date + ' 的参考汇率）' : ''));
+        render();
+      });
       break;
     }
     case 'bi-add': {
@@ -2291,7 +2300,6 @@ document.addEventListener('change', e=>{
   }
   if (t.dataset.budget) { const k = t.dataset.budget, v = +t.value; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k]; if (v > 0) S.settings.budgetRaw[k] = { v, cur: (old && old.cur) || S.settings.budgetDefCur || 'JPY' }; else delete S.settings.budgetRaw[k]; recomputeBudgets(); markDirty([], true); render(); return; }
   if (t.dataset.bcur) { const k = t.dataset.bcur; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k] || { v:0 }; S.settings.budgetRaw[k] = { v: old.v, cur: t.value }; S.settings.budgetDefCur = t.value; recomputeBudgets(); markDirty([], true); render(); return; }
-  if (t.id === 'budgetRate') { const v = +t.value; S.settings.rates = S.settings.rates || {}; if (v > 0) S.settings.rates.CNY = v; else delete S.settings.rates.CNY; recomputeBudgets(); markDirty([], true); render(); return; }
 });
 document.addEventListener('input', e=>{
   const t = e.target;
@@ -2340,13 +2348,12 @@ function recomputeBudgets(){
   S.settings.budgets = out; S.budgetRateMissing = missing;
 }
 function syncBudgetFromItems(){ recomputeBudgets(); }
-async function fetchCnyRate(){
-  const urls = [['https://api.frankfurter.dev/v1/latest?base=CNY&symbols=JPY', j=>j && j.rates && j.rates.JPY, j=>j.date],
-                ['https://api.frankfurter.app/latest?from=CNY&to=JPY', j=>j && j.rates && j.rates.JPY, j=>j.date]];
-  for (const [u, pick, dt] of urls) {
-    try { const r = await fetch(u, { cache:'no-store' }); if (!r.ok) continue; const j = await r.json(); const v = +pick(j); if (v > 0) return { rate: Math.round(v*100)/100, date: dt(j) || '' }; } catch(e){}
+async function fetchRate(base){
+  const urls = ['https://api.frankfurter.dev/v1/latest?base=' + base + '&symbols=JPY', 'https://api.frankfurter.app/latest?from=' + base + '&to=JPY'];
+  for (const u of urls) {
+    try { const r = await fetch(u, { cache:'no-store' }); if (!r.ok) continue; const j = await r.json(); const v = +(j && j.rates && j.rates.JPY); if (v > 0) return { rate: Math.round(v*100)/100, date: j.date || '' }; } catch(e){}
   }
-  throw new Error('拿不到汇率');
+  return null;
 }
 function scrollAssets(){ setTimeout(()=>{ const el = $('#assets'); if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({block:'start'}); }, 20); }
 function download(name, text, type){
