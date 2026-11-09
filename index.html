@@ -172,6 +172,8 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
 .subbars{margin:6px 0 2px 12px;padding-left:10px;border-left:2px solid var(--line);display:grid;gap:6px}
 .subbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;font-size:13px}
 .subbar .track{grid-column:1 / 3;height:5px;margin-top:0}
+.firow{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;align-items:end;padding:10px 0;border-bottom:1px solid var(--line)}
+.firow input,.firow select{width:100%}
 .bcat{border:1px solid var(--line);border-radius:8px;padding:6px 8px;display:grid;gap:6px;align-content:start}
 .bcat.open{background:var(--bg)}
 .btoggle{appearance:none;border:0;background:none;font:inherit;color:inherit;width:100%;padding:2px 0;cursor:pointer;text-align:left}
@@ -782,9 +784,10 @@ const yen = n => {
 const fmtMonth = ym => { const [y,m] = ym.split('-'); return y + '年' + (+m) + '月'; };
 const CURS = [['JPY','日元 JPY'],['CNY','人民币 CNY'],['USD','美元 USD']];
 function assetOfSrc(id){ return id && id.startsWith('as-') ? (S.assets||[]).find(a=>'as-'+a.id===id) : null; }
-function curOfSrc(id){ const s = S.sources.find(s=>s.id===id) || assetOfSrc(id); return (s && s.cur) || 'JPY'; }
+function fiOfSrc(id){ return id && id.startsWith('fi-') ? (S.settings.fixedIncome||[]).find(f=>'fi-'+f.id===id) : null; }
+function curOfSrc(id){ const s = S.sources.find(s=>s.id===id) || assetOfSrc(id) || fiOfSrc(id); return (s && s.cur) || 'JPY'; }
 function conv(){
-  const m = Object.fromEntries([...S.sources.map(s=>[s.id, (s.cur||'JPY')]), ...(S.assets||[]).map(a=>['as-'+a.id, a.cur||'JPY'])]);
+  const m = Object.fromEntries([...S.sources.map(s=>[s.id, (s.cur||'JPY')]), ...(S.assets||[]).map(a=>['as-'+a.id, a.cur||'JPY']), ...(S.settings.fixedIncome||[]).map(f=>['fi-'+f.id, f.cur||'JPY'])]);
   const rates = S.settings.rates || {};
   return x => { const c = m[x.s] || 'JPY'; if (c === 'JPY') return x.a; const r = +rates[c]; return r > 0 ? x.a * r : null; };
 }
@@ -831,14 +834,14 @@ function compactTx(x){
   return y;
 }
 function stateBody(compact){
-  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', dualCur:!!S.settings.dualCur, ratesAt:S.settings.ratesAt||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
-           imports:S.settings.imports.slice(-200), txns: compact ? S.txns.map(compactTx) : S.txns, assets:S.assets||[], del:S.del };
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, fixedIncome:S.settings.fixedIncome||[], learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', dualCur:!!S.settings.dualCur, ratesAt:S.settings.ratesAt||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
+           imports:S.settings.imports.slice(-200), txns: compact ? S.txns.filter(x=>!x.virt).map(compactTx) : S.txns.filter(x=>!x.virt), assets:S.assets||[], del:S.del };
 }
 function applyState(b){
   if (!b) return;
   S.sources = Array.isArray(b.sources) ? b.sources : [];
   const st = b.settings || {};
-  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.dualCur = !!st.dualCur; S.settings.ratesAt = st.ratesAt || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.fixedIncome = st.fixedIncome || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.dualCur = !!st.dualCur; S.settings.ratesAt = st.ratesAt || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
   S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
   S.txns = Array.isArray(b.txns) ? b.txns : [];
   S.assets = Array.isArray(b.assets) ? b.assets : [];
@@ -1177,7 +1180,32 @@ function clearDemo(){
 }
 
 // ---------- render ----------
+function refreshFixedIncome(){
+  S.txns = S.txns.filter(x=>!x.virt);
+  const list = S.settings.fixedIncome || [];
+  if (!list.length) { S.fiStatus = {}; return; }
+  const today = todayStr(), curYM = today.slice(0,7), status = {};
+  for (const f of list) {
+    if (!(+f.amt > 0) || !f.from) continue;
+    const kw = norm(f.kw || '');
+    let ym = f.from, guard = 0;
+    while (ym <= curYM && (!f.to || ym <= f.to) && guard++ < 240) {
+      const [y, m] = ym.split('-').map(Number);
+      const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const day = Math.min(Math.max(1, +f.day || 1), last);
+      const d = ym + '-' + pad(day);
+      if (d <= today) {
+        const seen = kw ? S.txns.find(x=>!x.virt && !x.o && x.st==='ok' && ymOf(x.d)===ym && norm(x.t).includes(kw)) : null;
+        if (seen) status[f.id + ym] = { seen };
+        else { S.txns.push({ i:'fi-'+f.id+'-'+ym, s:'fi-'+f.id, d, t:f.name || '固定收入', a:+f.amt, o:0, c:f.cat || 'inc_other', st:'ok', m:1, mc:1, virt:1 }); status[f.id + ym] = { added:true }; }
+      }
+      ym = shiftMonth(ym, 1);
+    }
+  }
+  S.fiStatus = status;
+}
 function render(){
+  refreshFixedIncome();
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===S.view));
   const ds = $('#dispCur'); if (ds) ds.value = dispCur();
   const db = $('#dualBtn'); if (db) { db.classList.toggle('on', !!S.settings.dualCur); db.textContent = S.settings.dualCur ? '双币 ✓' : '双币'; }
@@ -1187,7 +1215,7 @@ function render(){
   $('#view').innerHTML = v==='txns' ? viewTxns() : v==='import' ? viewImport() : v==='plan' ? viewPlan() : viewOverview();
   if (v==='txns') renderTxRows();
 }
-function srcName(id){ const s = S.sources.find(s=>s.id===id); if (s) return s.name; const a = assetOfSrc(id); return a ? a.name + (a.tail ? ' 尾号' + a.tail : '') + '（手动）' : '已删除来源'; }
+function srcName(id){ const s = S.sources.find(s=>s.id===id); if (s) return s.name; const fi = fiOfSrc(id); if (fi) return '固定收入（自动）'; const a = assetOfSrc(id); return a ? a.name + (a.tail ? ' 尾号' + a.tail : '') + '（手动）' : '已删除来源'; }
 
 function viewOverview(){
   const CV = conv();
@@ -1245,12 +1273,15 @@ function viewOverview(){
   const fixedTotal = S.settings.fixed.reduce((s,f)=>s+(+f.amt||0),0);
   const fixedHtml = fs.length ? fs.map(({f,hit})=>`<div class="li"><span>${esc(f.name)} <span class="muted num small">${yen(f.amt||0)}</span></span>${hit?`<span class="pill ok">已扣 ${hit.d.slice(5).replace('-','/')} · <span class="num">${fmtTx(hit)}</span></span>`:`<span class="pill none">本月没看到</span>`}</div>`).join('')
     : `<div class="empty">还没登记固定支出。<br><button class="btn sm" data-go="plan" style="margin-top:8px">去登记</button></div>`;
+  const fiList = (S.settings.fixedIncome||[]).filter(f=>+f.amt>0 && f.from && f.from <= S.month && (!f.to || f.to >= S.month));
+  const fiHtml = fiList.length ? `<div style="margin-top:12px"><h2 style="font-size:14px;margin:0 0 4px">固定收入</h2><div class="list">${fiList.map(f=>{ const st = (S.fiStatus||{})[f.id+S.month]; const amt = fmtCur(+f.amt, f.cur||'JPY');
+      return `<div class="li"><span>${esc(f.name||'固定收入')} <span class="muted num small">${amt}</span></span>${st && st.seen ? `<span class="pill ok">账单里已有 ${st.seen.d.slice(5).replace('-','/')}</span>` : st && st.added ? `<span class="pill xfer">已自动计入</span>` : `<span class="pill none">${+(f.day||1)}号以后计入</span>`}</div>`; }).join('')}</div></div>` : '';
 
   return tiles + `<div class="alerts">${alerts.join('')}</div>` + `
   <div class="grid two">
     <div class="card"><h2>支出分类与预算</h2><p class="h2sub">カテゴリ別（べつ）の支出（ししゅつ）と予算（よさん）</p><div class="bars">${bars}</div>${refundLine}</div>
     <div class="grid" style="align-content:start">
-      <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div></div>
+      <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div>${fiHtml}</div>
       ${reconCard()}
     </div>
   </div>` + reviewCard() + trendCard() + assetCard() + yearCard();
@@ -1562,13 +1593,14 @@ function renderTxRows(){
     const cats = x.o ? EXP_CATS : INC_CATS;
     const opts = cats.map(([k,n])=>`<option value="${k}" ${x.c===k?'selected':''}>${esc(n)}</option>`).join('');
     let pill, acts = '';
-    if (x.st==='dup') { pill = '<span class="pill dup">重复</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">其实不重复</button>`; }
+    if (x.virt) { pill = '<span class="pill xfer">固定收入</span>'; acts = `<button class="btn sm" data-go="plan">去改</button>`; }
+    else if (x.st==='dup') { pill = '<span class="pill dup">重复</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">其实不重复</button>`; }
     else if (x.st==='xfer') { pill = '<span class="pill xfer">转账</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">算作收支</button>`; }
     else if (x.sus) { const o = byId[x.sus]; pill = '<span class="pill sus">待确认</span>'; acts = `<button class="btn sm" data-act="sus-yes" data-id="${x.i}">是重复，删这条</button><button class="btn sm" data-act="sus-no" data-id="${x.i}">不是重复</button>`; if (o) x._sw = `可能和「${srcName(o.s)}」${o.d.slice(5).replace('-','/')}「${o.t}」是同一笔`; }
     else { pill = x.m ? '<span class="pill ok">计入·已确认</span>' : '<span class="pill ok">计入</span>'; acts = `<button class="btn sm" data-act="set-dup" data-id="${x.i}">标为重复</button><button class="btn sm" data-act="set-xfer" data-id="${x.i}">标为转账</button>`; }
     const why = [x.sus && x._sw ? x._sw : x.w, x.bc ? '账单分类：' + x.bc : ''].filter(Boolean).join(' · ');
     const exc = x.st!=='ok';
-    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`<select data-cat="${x.i}" aria-label="分类">${opts}</select>${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || !its || !its.length) return ''; const info = subInfo(x), cur = info && info.id; return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}${cur===i.id&&info.how==='kw'?'（自动）':''}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
+    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`${x.virt ? `<span class="small">${esc(CAT_NAME[x.c]||'')}</span>` : `<select data-cat="${x.i}" aria-label="分类">${opts}</select>`}${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || !its || !its.length) return ''; const info = subInfo(x), cur = info && info.id; return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}${cur===i.id&&info.how==='kw'?'（自动）':''}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
   }).join('');
   body.innerHTML = html || `<tr><td colspan="6" class="empty">没有符合条件的记录</td></tr>`;
 }
@@ -2084,6 +2116,7 @@ function viewPlan(){
     ${syncCard()}
     <div class="card"><h2>固定支出</h2><p class="h2sub">房租、水电、手机、订阅这类每月都有的。「关键词」写账单里会出现的字，比如 家賃、ドコモ、NETFLIX，我每月帮你核对有没有扣。</p>
       ${fixed}<div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fixed">＋ 加一项</button><span class="small">每月固定 <b class="num">${yen(fixedTotal)}</b>${avgInc?` · 约占收入 ${Math.round(fixedTotal/avgInc*100)}%`:''}</span></div></div>
+    ${fixedIncomeCard()}
     <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。金额可以用日元、人民币或美元填，会按汇率自动换算。有小项的分类点一下就能展开或收起。</p>
       <div class="fields" style="margin:0 0 12px">
         <label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="CNY" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label>
@@ -2110,6 +2143,27 @@ function ratesCard(){
   const rates = S.settings.rates || {};
   return `<div class="card" id="rates"><h2>汇率</h2><p class="h2sub">外币账单按这里的汇率换算成日元再汇总。汇率要你自己填，可以随时改，改了以后所有月份会重新换算。</p>
     <div class="fields">${curs.map(c=>`<label class="field">1 ${c} =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="${c}" value="${rates[c]||''}" placeholder="例如 21"> 日元</span></label>`).join('')}</div></div>`;
+}
+function fixedIncomeCard(){
+  const L = S.settings.fixedIncome || [];
+  const curOpt = c => CURS.map(([k,n])=>`<option value="${k}" ${(c||'JPY')===k?'selected':''}>${n}</option>`).join('');
+  const catOpt = c => INC_CATS.filter(([k])=>k!=='refund').map(([k,n])=>`<option value="${k}" ${(c||'inc_other')===k?'selected':''}>${n}</option>`).join('');
+  const rows = L.map(f=>`<div class="firow">
+      <label class="field">名称<input type="text" data-fi="${esc(f.id)}" data-k="name" value="${esc(f.name||'')}" placeholder="例：房租收入、家里给的生活费"></label>
+      <label class="field">每月金额<input type="number" min="0" step="100" data-fi="${esc(f.id)}" data-k="amt" value="${f.amt||''}"></label>
+      <label class="field">币种<select data-fi="${esc(f.id)}" data-k="cur">${curOpt(f.cur)}</select></label>
+      <label class="field">分类<select data-fi="${esc(f.id)}" data-k="cat">${catOpt(f.cat)}</select></label>
+      <label class="field">每月几号<input type="number" min="1" max="31" data-fi="${esc(f.id)}" data-k="day" value="${f.day||1}" style="width:70px"></label>
+      <label class="field">从哪个月开始<input type="month" data-fi="${esc(f.id)}" data-k="from" value="${esc(f.from||'')}"></label>
+      <label class="field">到哪个月为止（可空）<input type="month" data-fi="${esc(f.id)}" data-k="to" value="${esc(f.to||'')}"></label>
+      <label class="field">账单里的关键词（可空）<input type="text" data-fi="${esc(f.id)}" data-k="kw" value="${esc(f.kw||'')}" placeholder="会出现在账单里才填"></label>
+      <button class="iconbtn" data-act="del-fi" data-id="${esc(f.id)}" aria-label="删除" style="align-self:end">×</button>
+    </div>`).join('');
+  const total = L.filter(f=>+f.amt>0 && f.from && f.from <= nowYM() && (!f.to || f.to >= nowYM())).reduce((a,f)=>a+(toJ(+f.amt, f.cur||'JPY')||0),0);
+  return `<div class="card"><h2>固定收入</h2><p class="h2sub">账单里看不到、但每个月都会有的额外收入。到了每月那一天，会自动算进当月收入，也会算进全年收支。</p>
+    ${rows}
+    <div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fi">＋ 加一项</button><span class="small">每月固定收入 <b class="num">${yen(total)}</b></span></div>
+    <p class="small muted" style="margin:8px 0 0">如果这笔钱也会出现在你上传的账单里（比如打进了你会上传明细的银行卡），就填「账单里的关键词」。那个月账单里已经有这笔，就不会再重复计入。</p></div>`;
 }
 function syncCard(){
   const err = Sync.err ? `<div class="alert warn" style="margin:0 0 12px"><span>${esc(Sync.err)}</span></div>` : '';
@@ -2175,6 +2229,8 @@ document.addEventListener('click', e=>{
     case 'cancel-pending': S.pending = null; if (S.queue && S.queue.length) { toast('已跳过这个文件'); nextInQueue(); } else render(); break;
     case 'confirm-import': confirmImport(); break;
     case 'undo-import': if (arm(b,'undo'+id,'再点一次确认撤销')) undoImport(id); break;
+    case 'add-fi': S.settings.fixedIncome = (S.settings.fixedIncome||[]).concat([{ id:'fi'+rid(), name:'', amt:0, cur:'JPY', cat:'inc_other', day:25, from: nowYM(), to:'', kw:'' }]); markDirty([], true); render(); break;
+    case 'del-fi': if (arm(b, 'delfi'+id, '再点一次删除')) { S.settings.fixedIncome = (S.settings.fixedIncome||[]).filter(f=>f.id!==id); markDirty([], true); render(); } break;
     case 'add-fixed': S.settings.fixed.push({ id:'f'+rid(), name:'', amt:0, cat:'sub', kw:'' }); markDirty([], true); render(); break;
     case 'del-fixed': S.settings.fixed = S.settings.fixed.filter(f=>f.id!==id); markDirty([], true); render(); break;
     case 'del-src': if (arm(b,'src'+id,'再点一次：删除来源和全部记录')) { const ms = new Set(S.txns.filter(t=>t.s===id).map(t=>ymOf(t.d))); bury('s', id); for (const t of S.txns) if (t.s===id) bury('t', t.i); S.sources = S.sources.filter(s=>s.id!==id); S.txns = S.txns.filter(t=>t.s!==id); if (S.importSrc===id) S.importSrc=''; runAnalyze(false); markDirty(new Set([...ms, ...S.txns.map(t=>ymOf(t.d))]), true); render(); } break;
@@ -2353,6 +2409,15 @@ document.addEventListener('change', e=>{
     if (S.incomeView || S.catFilter) renderTxView(); else renderTxRows(); return;
   }
   if (t.dataset.srctype) { const s = S.sources.find(s=>s.id===t.dataset.srctype); if (s){ s.type = t.value; stamp(s); runAnalyze(); } return; }
+  if (t.dataset.fi) {
+    const f = (S.settings.fixedIncome||[]).find(f=>f.id===t.dataset.fi); if (!f) return;
+    const k = t.dataset.k;
+    f[k] = (k === 'amt' || k === 'day') ? (+t.value || 0) : t.value.trim();
+    if (k === 'day') f.day = Math.min(31, Math.max(1, f.day || 1));
+    markDirty([], true);
+    if (k !== 'name' && k !== 'kw') render();
+    return;
+  }
   if (t.dataset.fx) { const f = S.settings.fixed.find(f=>f.id===t.dataset.fx); if (f){ const k=t.dataset.k; f[k] = k==='amt' ? (+t.value||0) : t.value; markDirty([], true); if (k==='amt') render(); } return; }
   if (t.dataset.bi) {
     const k = t.dataset.bi, list = (S.settings.budgetItems || {})[k] || [], x = list.find(i=>i.id===t.dataset.bid);
