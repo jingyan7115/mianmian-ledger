@@ -2055,7 +2055,7 @@ function viewPlan(){
   const budgetTotal = Object.entries(S.settings.budgets).filter(([k])=>k!=='save').reduce((s,[,v])=>s+(+v||0),0);
   const fixedOutside = S.settings.fixed.filter(f=>!(+S.settings.budgets[f.cat])).reduce((s,f)=>s+(+f.amt||0),0);
   const planned = budgetTotal + fixedOutside;
-  const BI = S.settings.budgetItems || {}, RW = S.settings.budgetRaw || {}, DC = S.settings.budgetDefCur || 'JPY';
+  const BI = S.settings.budgetItems || {}, RW = S.settings.budgetRaw || {}, DC = 'JPY';
   const cnyRate = +(S.settings.rates||{}).CNY || 0;
   const unitSel = (attrs, cur) => `<select ${attrs} class="unit" aria-label="单位"><option value="JPY" ${cur==='JPY'?'selected':''}>日元</option><option value="CNY" ${cur==='CNY'?'selected':''}>人民币</option><option value="USD" ${cur==='USD'?'selected':''}>美元</option></select>`;
   const both = vj => { const r = rmb(vj); return r ? `${r} <span class="muted small">≈ ${yenRaw(vj)}</span>` : yenRaw(vj); };
@@ -2274,7 +2274,8 @@ document.addEventListener('click', e=>{
       const raw = (S.settings.budgetRaw||{})[k];
       if (!list.length && raw && +raw.v > 0) list.push({ id:'b'+rid(), name:'', amt:+raw.v, cur: raw.cur || 'JPY' });
       if (S.settings.budgetRaw) delete S.settings.budgetRaw[k];
-      list.push({ id:'b'+rid(), name:'', amt:0, cur: (raw && raw.cur) || S.settings.budgetDefCur || 'JPY' });
+      const lastCur = list.length ? (list[list.length-1].cur || 'JPY') : ((raw && raw.cur) || 'JPY');
+      list.push({ id:'b'+rid(), name:'', amt:0, cur: lastCur });
       syncBudgetFromItems(k); markDirty([], true); render();
       setTimeout(()=>{ const ins = document.querySelectorAll('input[data-bi="'+k+'"][data-bk="name"]'); const el = ins[ins.length-1]; if (el) el.focus(); }, 30);
       break;
@@ -2342,7 +2343,7 @@ document.addEventListener('change', e=>{
     if (x) {
       const bk = t.dataset.bk;
       if (bk === 'amt') x.amt = +t.value || 0;
-      else if (bk === 'cur') { x.cur = t.value; S.settings.budgetDefCur = t.value; }
+      else if (bk === 'cur') { x.cur = t.value; }
       else if (bk === 'kw') x.kw = t.value.trim();
       else x.name = t.value.trim();
       recomputeBudgets(); markDirty([], true);
@@ -2351,8 +2352,8 @@ document.addEventListener('change', e=>{
     }
     return;
   }
-  if (t.dataset.budget) { const k = t.dataset.budget, v = +t.value; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k]; if (v > 0) S.settings.budgetRaw[k] = { v, cur: (old && old.cur) || S.settings.budgetDefCur || 'JPY' }; else delete S.settings.budgetRaw[k]; recomputeBudgets(); markDirty([], true); render(); return; }
-  if (t.dataset.bcur) { const k = t.dataset.bcur; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k] || { v:0 }; S.settings.budgetRaw[k] = { v: old.v, cur: t.value }; S.settings.budgetDefCur = t.value; recomputeBudgets(); markDirty([], true); render(); return; }
+  if (t.dataset.budget) { const k = t.dataset.budget, v = +t.value; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k]; const cur = (old && old.cur) || 'JPY'; if (v > 0 || cur !== 'JPY') S.settings.budgetRaw[k] = { v: v > 0 ? v : 0, cur }; else delete S.settings.budgetRaw[k]; recomputeBudgets(); markDirty([], true); render(); return; }
+  if (t.dataset.bcur) { const k = t.dataset.bcur; S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k] || { v:0 }; S.settings.budgetRaw[k] = { v: old.v || 0, cur: t.value }; recomputeBudgets(); markDirty([], true); render(); return; }
 });
 document.addEventListener('input', e=>{
   const t = e.target;
