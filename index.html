@@ -1210,7 +1210,7 @@ function viewOverview(){
       <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div></div>
       ${reconCard()}
     </div>
-  </div>` + trendCard() + assetCard() + yearCard();
+  </div>` + reviewCard() + trendCard() + assetCard() + yearCard();
 }
 function reconCard(){
   const pays = S.txns.filter(x=>ymOf(x.d)===S.month && x.o && (x.c==='card' || (x.st==='xfer' && /信用卡还款/.test(x.w||''))));
@@ -1371,6 +1371,45 @@ function assetCard(){
     ${goal}
     ${norate.length ? `<div class="alert warn" style="margin-top:10px"><span>${norate.map(o=>esc(assetLabel(o.it))).join('、')} 是外币，还没填汇率，暂时没算进总资产。</span><button class="btn sm" data-act="goto-rates">去填汇率</button></div>` : ''}
     ${groups}${pie}</div>`;
+}
+function reviewCard(){
+  const cur = nowYM();
+  const RM = S.month < cur ? S.month : shiftMonth(cur, -1);
+  const CV = conv();
+  const budgets = S.settings.budgets || {}, BI = S.settings.budgetItems || {};
+  const cats = Object.keys(budgets).filter(k => +budgets[k] > 0 && k !== 'save' && k !== 'reimb');
+  if (!cats.length) return '';
+  const M = monthSummary(S.txns, RM, CV);
+  if (!M.count) return '';
+  const hist = [RM, shiftMonth(RM,-1), shiftMonth(RM,-2)].map(ym => ({ ym, M: monthSummary(S.txns, ym, CV) })).filter(o => o.M.count);
+  const subSpent = (ym, k) => { const by = {}; for (const x of S.txns) { if (ymOf(x.d)!==ym || x.st!=='ok' || !x.o || x.c!==k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) by[sid] = (by[sid]||0) + v; } return by; };
+  const r500 = v => Math.max(500, Math.ceil(v/500)*500);
+  const rows = [];
+  for (const k of cats) {
+    const items = (BI[k] || []).filter(i => +i.amt > 0);
+    let unassigned = 0;
+    if (items.length) for (const o of hist) for (const x of S.txns) { if (ymOf(x.d)!==o.ym || x.st!=='ok' || !x.o || x.c!==k || subOf(x)) continue; unassigned += CV(x) || 0; }
+    const lines = items.length
+      ? items.map(i => ({ k, sub: i.id, name: (CAT_NAME[k]||k) + ' · ' + (i.name||'未命名'), budget: +i.amt, series: hist.map(o => subSpent(o.ym, k)[i.id] || 0) }))
+      : [{ k, sub: '', name: CAT_NAME[k]||k, budget: +budgets[k], series: hist.map(o => o.M.byCat[k] || 0) }];
+    for (const L of lines) {
+      const spent = L.series[0], n = L.series.length, avg = L.series.reduce((a,v)=>a+v,0) / n;
+      let tip = '', sugg = 0, kind = 'ok';
+      if (n >= 2 && avg > L.budget * 1.1) { sugg = r500(avg); kind = 'up'; tip = `近 ${n} 个月平均花 ${yen(avg)}，比预算多。可以把预算调到 ${yen(sugg)}，或者下个月有意识地少花一点。`; }
+      else if (n >= 2 && L.series.every(v => v < L.budget * 0.6) && !(L.sub && unassigned > 0)) { sugg = r500(avg * 1.1); kind = 'down'; tip = `近 ${n} 个月都只用了不到六成（平均 ${yen(avg)}）。可以把预算降到 ${yen(sugg)}，省下来的转去储蓄。`; }
+      else if (spent > L.budget) { kind = 'over'; tip = n < 2 ? '这个月超了。数据还不够 2 个月，先观察一下再调预算。' : `这个月超了，不过近 ${n} 个月平均 ${yen(avg)} 还在预算附近，可能只是偶然。`; }
+      if (L.sub && unassigned > 0 && kind === 'ok' && L.series.every(v => v < L.budget * 0.6)) { kind = 'note'; tip = `「${CAT_NAME[k]||k}」近 ${n} 个月还有 ${yen(unassigned)} 没指定小项，这一项的数字可能偏低。先把它们指定好，复盘才准。`; }
+      rows.push({ ...L, spent, avg, n, tip, sugg, kind });
+    }
+  }
+  const over = rows.filter(r => r.spent > r.budget);
+  const flagged = rows.filter(r => r.kind !== 'ok');
+  const rowHtml = r => `<div class="li" style="align-items:flex-start"><div style="min-width:0"><div>${esc(r.name)} <span class="num ${r.spent>r.budget?'neg':'muted'}">${yen(r.spent)} / ${yen(r.budget)}</span>${r.spent>r.budget?` <span class="pill dup">超 ${yen(r.spent-r.budget)}</span>`:''}</div><div class="why">${esc(r.tip)}</div></div>${r.sugg?`<button class="btn sm" data-act="adopt-budget" data-k="${r.k}" data-sub="${esc(r.sub)}" data-v="${r.sugg}">预算改成 ${yen(r.sugg)}</button>`:''}</div>`;
+  const totalB = rows.reduce((a,r)=>a+r.budget,0), totalS = rows.reduce((a,r)=>a+r.spent,0);
+  return `<div class="card" style="margin-top:14px"><h2>${+RM.slice(5)}月预算复盘${RM!==S.month?'（上个月）':''}</h2>
+    <p class="h2sub">设了预算的部分：花了 <b class="num">${yen(totalS)}</b> / 预算 <b class="num">${yen(totalB)}</b> · 超支 ${over.length} 项 · 平均值按最近 ${hist.length} 个有账单的月份算</p>
+    ${flagged.length ? `<div class="list">${flagged.map(rowHtml).join('')}</div>` : `<div class="empty" style="text-align:left;padding:6px 0">每一项都在预算里，节奏很稳。</div>`}
+    <p class="small muted" style="margin:10px 0 0">「预算改成…」会直接改掉「每月预算」里的数字。预算目前不分月份，改了以后，往月的对比也会按新预算显示。</p></div>`;
 }
 function yearCard(){
   const Y = String(S.year || S.month.slice(0,4));
@@ -2146,6 +2185,12 @@ document.addEventListener('click', e=>{
     case 'year-prev': S.year = String(+(S.year || S.month.slice(0,4)) - 1); render(); setTimeout(()=>{ const el = $('#year'); if (el) el.scrollIntoView({block:'start'}); }, 30); break;
     case 'year-next': S.year = String(+(S.year || S.month.slice(0,4)) + 1); render(); setTimeout(()=>{ const el = $('#year'); if (el) el.scrollIntoView({block:'start'}); }, 30); break;
     case 'clear-cat': S.catFilter = ''; S.incomeView = false; S.filter = 'all'; render(); break;
+    case 'adopt-budget': {
+      const k = b.dataset.k, sub = b.dataset.sub, v = +b.dataset.v;
+      if (sub) { const it = ((S.settings.budgetItems||{})[k]||[]).find(i=>i.id===sub); if (it) { it.amt = v; syncBudgetFromItems(k); } }
+      else S.settings.budgets[k] = v;
+      markDirty([], true); toast('预算已改成 ' + yen(v)); render(); break;
+    }
     case 'bi-add': {
       const k = b.dataset.k; S.settings.budgetItems = S.settings.budgetItems || {};
       const list = S.settings.budgetItems[k] || (S.settings.budgetItems[k] = []);
