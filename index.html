@@ -45,6 +45,11 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-
 .month b{font-family:var(--font-d);font-size:19px;min-width:120px;text-align:center}
 .iconbtn{border:1px solid var(--line);background:var(--surface);color:var(--ink);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px}
 .iconbtn:hover{border-color:var(--accent)}
+.sec{display:block;font-size:12px;font-weight:400;color:var(--muted);letter-spacing:0;margin-top:2px}
+.amt .sec,.subbar .sec{display:inline;margin-left:4px}
+.amt .sec::before,.subbar .sec::before{content:"/ "}
+.dualbtn{font-size:12px;padding:4px 9px;border-radius:999px}
+.dualbtn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .dispsel select{font-size:12px;padding:4px 6px;border-radius:999px}
 .savepill{cursor:pointer;font-size:12px;color:var(--muted);border:1px solid var(--line);padding:3px 10px;border-radius:999px;background:var(--surface);white-space:nowrap}
 .savepill.ok{color:var(--good)} .savepill.err{color:var(--bad);border-color:var(--bad)}
@@ -195,6 +200,7 @@ td select{font-size:13px;padding:3px 6px;max-width:150px}
       <b id="monthLabel">—</b>
       <button class="iconbtn" id="nextM" aria-label="下个月">›</button>
       <label class="dispsel" title="显示用的货币"><select id="dispCur" aria-label="显示货币"><option value="JPY">¥ 日元显示</option><option value="CNY">元 人民币显示</option><option value="USD">$ 美元显示</option></select></label>
+      <button class="btn dualbtn" id="dualBtn" title="同时显示两种货币">双币</button>
       <span class="savepill" id="savePill">连接中…</span>
     </div>
   </header>
@@ -752,6 +758,15 @@ const yenRaw = n => (n<0?'−':'') + '¥' + Math.abs(Math.round(n)).toLocaleStri
 const DISP = { JPY:['日元','¥'], CNY:['人民币','元'], USD:['美元','$'] };
 function dispCur(){ const c = (typeof S !== 'undefined' && S.settings && S.settings.dispCur) || 'JPY'; if (c === 'JPY') return 'JPY'; const r = +((S.settings.rates||{})[c]); return r > 0 ? c : 'JPY'; }
 function dv(n){ const c = dispCur(); return c === 'JPY' ? n : n / +S.settings.rates[c]; }
+function fmtIn(n, c){
+  if (c === 'JPY') return yenRaw(n);
+  const r = +((S.settings.rates||{})[c]); if (!(r > 0)) return '';
+  const v = n / r, a = Math.abs(v), sgn = v < 0 ? '−' : '';
+  const num = a.toLocaleString(c === 'CNY' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 0, maximumFractionDigits: a >= 100 ? 0 : (c === 'CNY' ? 1 : 2) });
+  return c === 'CNY' ? sgn + num + ' 元' : sgn + '$' + num;
+}
+function secCur(){ if (!S.settings.dualCur) return null; const c = dispCur(); if (c !== 'JPY') return 'JPY'; return +((S.settings.rates||{}).CNY) > 0 ? 'CNY' : null; }
+const yen2 = n => { const c2 = secCur(); return yen(n) + (c2 ? `<span class="sec">${fmtIn(n, c2)}</span>` : ''); };
 const yen = n => {
   const c = dispCur();
   if (c === 'JPY') return yenRaw(n);
@@ -811,14 +826,14 @@ function compactTx(x){
   return y;
 }
 function stateBody(compact){
-  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', dualCur:!!S.settings.dualCur, ratesAt:S.settings.ratesAt||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
            imports:S.settings.imports.slice(-200), txns: compact ? S.txns.map(compactTx) : S.txns, assets:S.assets||[], del:S.del };
 }
 function applyState(b){
   if (!b) return;
   S.sources = Array.isArray(b.sources) ? b.sources : [];
   const st = b.settings || {};
-  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.dualCur = !!st.dualCur; S.settings.ratesAt = st.ratesAt || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
   S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
   S.txns = Array.isArray(b.txns) ? b.txns : [];
   S.assets = Array.isArray(b.assets) ? b.assets : [];
@@ -1160,6 +1175,7 @@ function clearDemo(){
 function render(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===S.view));
   const ds = $('#dispCur'); if (ds) ds.value = dispCur();
+  const db = $('#dualBtn'); if (db) { db.classList.toggle('on', !!S.settings.dualCur); db.textContent = S.settings.dualCur ? '双币 ✓' : '双币'; }
   $('#monthLabel').textContent = fmtMonth(S.month);
   $('#demoBar').hidden = !S.demo;
   const v = S.view;
@@ -1181,12 +1197,14 @@ function viewOverview(){
   const rate = M.income > 0 ? Math.round((M.income - M.expense) / M.income * 100) : null;
   const tiles = `
   <div class="grid tiles">
-    <button class="card tile tilebtn" data-incomego="1" title="看这个月都有哪些收入"><div class="lab">收入 ›</div><div class="val num">${yen(M.income)}</div><div class="foot">不含转账、充值和退款 · 点开看明细</div></button>
-    <div class="card tile"><div class="lab">实际支出</div><div class="val num">${yen(M.expense)}</div><div class="foot">${budgetTotal?('设了预算的分类：'+yen(budgetSpent)+' / '+yen(budgetTotal)+(budgetSpent>budgetTotal?' · 超了':'')):'还没设预算'}</div></div>
-    <div class="card tile"><div class="lab">结余</div><div class="val num ${M.net>=0?'pos':'neg'}">${yen(M.net)}</div><div class="foot">${rate!==null?('结余率 '+rate+'%'):''}${M.save?(' · 另存入投资 '+yen(M.save)):''}${(M.reimb||M.reimbIn)?(' · 报销垫付 '+yen(M.reimb)+' / 到账 '+yen(M.reimbIn)):''}</div></div>
-    <div class="card tile excl"><div class="lab">已排除，没算进支出</div><div class="val num">${yen(M.excludedAmt)}</div><div class="foot">重复 ${M.dup.length} 笔 · 转账/还款/充值 ${M.xfer.length} 笔</div></div>
+    <button class="card tile tilebtn" data-incomego="1" title="看这个月都有哪些收入"><div class="lab">收入 ›</div><div class="val num">${yen2(M.income)}</div><div class="foot">不含转账、充值和退款 · 点开看明细</div></button>
+    <div class="card tile"><div class="lab">实际支出</div><div class="val num">${yen2(M.expense)}</div><div class="foot">${budgetTotal?('设了预算的分类：'+yen(budgetSpent)+' / '+yen(budgetTotal)+(budgetSpent>budgetTotal?' · 超了':'')):'还没设预算'}</div></div>
+    <div class="card tile"><div class="lab">结余</div><div class="val num ${M.net>=0?'pos':'neg'}">${yen2(M.net)}</div><div class="foot">${rate!==null?('结余率 '+rate+'%'):''}${M.save?(' · 另存入投资 '+yen(M.save)):''}${(M.reimb||M.reimbIn)?(' · 报销垫付 '+yen(M.reimb)+' / 到账 '+yen(M.reimbIn)):''}</div></div>
+    <div class="card tile excl"><div class="lab">已排除，没算进支出</div><div class="val num">${yen2(M.excludedAmt)}</div><div class="foot">重复 ${M.dup.length} 笔 · 转账/还款/充值 ${M.xfer.length} 笔</div></div>
   </div>`;
   const alerts = [];
+  const stale = staleRates();
+  if (stale.length) alerts.push(`<div class="alert warn"><span>${stale.map(o=>DISP[o.c][0]+'汇率已经 '+o.days+' 天没更新了').join('，')}。换算出来的金额可能和现在差得有点远。</span><span class="acts"><button class="btn sm" data-act="refresh-rates">一键更新</button><button class="btn sm" data-act="goto-rates2">手动改</button></span></div>`);
   if (!S.demo && !Sync.cfg) alerts.push(`<div class="alert info"><span>现在只保存在这台设备。想在手机和电脑上都能用，可以连上你的 GitHub 私有仓库同步。</span><button class="btn sm" data-act="goto-sync">设置同步</button></div>`);
   if (Sync.cfg && !Sync.pass) alerts.push(`<div class="alert warn"><span>同步暂停了，需要输入同步密码。</span><button class="btn sm" data-act="goto-sync">去输入</button></div>`);
   if (M.sus.length) { const n = M.sus.length/2|0 || 1; alerts.push(`<div class="alert warn"><span><b>${n} 组</b>金额相同、日期接近，但商户名不一样，我不确定是不是重复。目前两笔都算进支出。</span><button class="btn sm" data-filter="sus">去确认</button></div>`); }
@@ -1213,7 +1231,7 @@ function viewOverview(){
         return `<div class="subbar"><span class="nm">${esc(i.name||'未命名')}</span><span class="amt num">${yen(sp)}${bud?` <span class="muted">/ ${yen(bud)}</span>`:''}${bud&&sp>bud?` <span class="neg">超 ${yen(sp-bud)}</span>`:''}</span><div class="track"><div class="fill ${cl}" style="width:${bud?Math.min(100,r*100).toFixed(1):0}%"></div></div></div>`; }).join('')}
         ${unassigned ? `<div class="subbar"><span class="nm muted">未指定小项</span><span class="amt num muted">${yen(unassigned)}</span><button class="btn sm" data-catgo="${c.k}" style="grid-column:1 / 3;justify-self:start">去指定</button></div>` : ''}</div>`;
     }
-    return `<div class="bar"><div class="row1"><button class="catlink" data-catgo="${c.k}" title="看这个分类的全部明细">${esc(c.n)} ›</button><span class="amt num">${yen(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div>${subHtml}</div>`;
+    return `<div class="bar"><div class="row1"><button class="catlink" data-catgo="${c.k}" title="看这个分类的全部明细">${esc(c.n)} ›</button><span class="amt num">${yen2(c.spent)}${c.budget?` <span class="muted">/ ${yen(c.budget)}</span>`:''}</span></div><div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div><div class="row2">${row2}</div>${subHtml}</div>`;
   }).join('') || '<div class="empty">这个月还没有计入的支出</div>';
   const refundLine = M.refund ? `<p class="small muted" style="margin:10px 0 0">已扣除退款 ${yen(M.refund)}</p>` : '';
 
@@ -1388,7 +1406,7 @@ function assetCard(){
   </div>` : '';
   return `<div class="card" id="assets" style="margin-top:14px">
     <div class="asset-hero"><div>${titleRow}<p class="h2sub" style="margin:4px 0 0">储蓄和投资加起来的总资产 · 储蓄账户的余额 = 最近一次更新的金额 + 之后记的收入</p></div>
-      <div style="text-align:right"><div class="big num">${yen(total)}</div>${hasBase ? `<div class="small ${cur-base>=0?'pos':'neg'} num">今年 ${cur-base>=0?'+':'−'}${yen(Math.abs(cur-base)).replace('¥','¥')}</div>` : `<div class="small muted">明年开始会显示一年涨了多少</div>`}</div></div>
+      <div style="text-align:right"><div class="big num">${yen2(total)}</div>${hasBase ? `<div class="small ${cur-base>=0?'pos':'neg'} num">今年 ${cur-base>=0?'+':'−'}${yen(Math.abs(cur-base)).replace('¥','¥')}</div>` : `<div class="small muted">明年开始会显示一年涨了多少</div>`}</div></div>
     ${goal}
     ${norate.length ? `<div class="alert warn" style="margin-top:10px"><span>${norate.map(o=>esc(assetLabel(o.it))).join('、')} 是外币，还没填汇率，暂时没算进总资产。</span><button class="btn sm" data-act="goto-rates">去填汇率</button></div>` : ''}
     ${groups}${pie}</div>`;
@@ -1467,10 +1485,10 @@ function yearCard(){
   return `<div class="card" id="year" style="margin-top:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><h2>年度统计</h2><p class="h2sub" style="margin:0">年間（ねんかん）のまとめ · 有账单的月份 ${n} 个，平均值按这 ${n} 个月算</p></div>${nav}</div>
     <div class="grid tiles">
-      <div class="card tile"><div class="lab">全年收入</div><div class="val num">${yen(inc)}</div><div class="foot">月均 ${yen(inc/n)}</div></div>
-      <div class="card tile"><div class="lab">全年实际支出</div><div class="val num">${yen(exp)}</div><div class="foot">月均 ${yen(exp/n)} · 最多是 ${+best.ym.slice(5)}月 ${yen(best.expense)}</div></div>
-      <div class="card tile"><div class="lab">全年结余</div><div class="val num ${net>=0?'pos':'neg'}">${yen(net)}</div><div class="foot">${rate!==null?'结余率 '+rate+'%':''}${save?' · 存入投资 '+yen(save):''}</div></div>
-      <div class="card tile excl"><div class="lab">全年已排除</div><div class="val num">${yen(excl)}</div><div class="foot">重复和转账，没算进支出${(reimb||reimbIn)?' · 报销垫付 '+yen(reimb)+' / 到账 '+yen(reimbIn):''}</div></div>
+      <div class="card tile"><div class="lab">全年收入</div><div class="val num">${yen2(inc)}</div><div class="foot">月均 ${yen(inc/n)}</div></div>
+      <div class="card tile"><div class="lab">全年实际支出</div><div class="val num">${yen2(exp)}</div><div class="foot">月均 ${yen(exp/n)} · 最多是 ${+best.ym.slice(5)}月 ${yen(best.expense)}</div></div>
+      <div class="card tile"><div class="lab">全年结余</div><div class="val num ${net>=0?'pos':'neg'}">${yen2(net)}</div><div class="foot">${rate!==null?'结余率 '+rate+'%':''}${save?' · 存入投资 '+yen(save):''}</div></div>
+      <div class="card tile excl"><div class="lab">全年已排除</div><div class="val num">${yen2(excl)}</div><div class="foot">重复和转账，没算进支出${(reimb||reimbIn)?' · 报销垫付 '+yen(reimb)+' / 到账 '+yen(reimbIn):''}</div></div>
     </div>
     ${(()=>{ const items = S.assets||[]; if (!items.length) return ''; const asOf = Y === todayStr().slice(0,4) ? todayStr() : Y + '-12-31';
       const sv = items.filter(it=>it.g==='save').reduce((a,it)=>a+(toJPY(assetValueAt(it, asOf), it.cur)||0),0), iv = items.filter(it=>it.g==='invest').reduce((a,it)=>a+(toJPY(assetValueAt(it, asOf), it.cur)||0),0);
@@ -2059,7 +2077,8 @@ function viewPlan(){
       <div class="fields" style="margin:0 0 12px">
         <label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="CNY" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label>
         <label class="field">1 美元 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="USD" value="${+(S.settings.rates||{}).USD||''}" placeholder="例如 150" style="width:100px"> 日元</span></label>
-        <button class="btn sm" data-act="fetch-rate">获取今天的汇率</button></div>
+        <button class="btn sm" data-act="fetch-rate">获取今天的汇率</button>
+        ${Object.keys(S.settings.ratesAt||{}).length ? `<span class="small muted">上次更新：${Object.entries(S.settings.ratesAt).map(([c,d])=>DISP[c]?DISP[c][0]+' '+d:'').filter(Boolean).join('，')}</span>` : ''}</div>
       ${S.budgetRateMissing ? `<div class="alert warn" style="margin:0 0 12px"><span>有用人民币或美元填的预算，但对应的汇率还没填，这部分暂时没算进去。</span></div>` : ''}
       <div class="budgetgrid">${budgets}</div>
       <p class="small muted" style="margin:8px 0 0">点「＋ 小项」可以把一个分类的预算拆开写清楚，比如外食拆成「午饭 15,000 · 咖啡 3,000」。有小项时，这个分类的预算就是小项加起来的总数。</p>
@@ -2222,12 +2241,27 @@ document.addEventListener('click', e=>{
       else { S.settings.budgetRaw = S.settings.budgetRaw || {}; const old = S.settings.budgetRaw[k] || { cur:'JPY' }; S.settings.budgetRaw[k] = { v: inCur(old.cur), cur: old.cur || 'JPY' }; }
       recomputeBudgets(); markDirty([], true); toast('预算已改成 ' + (rmb(v) || yen(v))); render(); break;
     }
+    case 'goto-rates2': go('plan'); setTimeout(()=>{ const el = $('[data-rate]'); if (el) el.scrollIntoView({block:'center'}); }, 50); break;
+    case 'refresh-rates': {
+      b.disabled = true; b.textContent = '更新中…';
+      Promise.all([fetchRate('CNY'), fetchRate('USD')]).then(([c, u])=>{
+        if (!c && !u) { toast('暂时拿不到汇率，请手动改一下'); b.disabled = false; b.textContent = '一键更新'; return; }
+        S.settings.rates = S.settings.rates || {}; S.settings.ratesAt = S.settings.ratesAt || {};
+        if (c) { S.settings.rates.CNY = c.rate; S.settings.ratesAt.CNY = todayStr(); }
+        if (u) { S.settings.rates.USD = u.rate; S.settings.ratesAt.USD = todayStr(); }
+        recomputeBudgets(); markDirty([], true);
+        toast('汇率已更新：' + [c ? '1 人民币 = ' + c.rate + ' 日元' : '', u ? '1 美元 = ' + u.rate + ' 日元' : ''].filter(Boolean).join(' · '));
+        render();
+      });
+      break;
+    }
     case 'fetch-rate': {
       b.disabled = true; b.textContent = '获取中…';
       Promise.all([fetchRate('CNY'), fetchRate('USD')]).then(([c, u])=>{
         if (!c && !u) { toast('暂时拿不到汇率，请手动填一下'); b.disabled = false; b.textContent = '获取今天的汇率'; return; }
         S.settings.rates = S.settings.rates || {};
         if (c) S.settings.rates.CNY = c.rate; if (u) S.settings.rates.USD = u.rate;
+        S.settings.ratesAt = S.settings.ratesAt || {}; if (c) S.settings.ratesAt.CNY = todayStr(); if (u) S.settings.ratesAt.USD = todayStr();
         recomputeBudgets(); markDirty([], true);
         toast([c ? '1 人民币 = ' + c.rate + ' 日元' : '', u ? '1 美元 = ' + u.rate + ' 日元' : ''].filter(Boolean).join(' · ') + ((c||u).date ? '（' + (c||u).date + ' 的参考汇率）' : ''));
         render();
@@ -2267,7 +2301,7 @@ document.addEventListener('change', e=>{
   if (t.id === 'importSrc') { S.importSrc = t.value; reparse(); render(); return; }
   if (t.id === 'newSrcType') { S.newSrc.type = t.value; reparse(); render(); return; }
   if (t.id === 'newSrcCur') { S.newSrc.cur = t.value; render(); return; }
-  if (t.dataset.rate) { const v = +t.value; S.settings.rates = S.settings.rates || {}; if (v>0) S.settings.rates[t.dataset.rate] = v; else delete S.settings.rates[t.dataset.rate]; recomputeBudgets(); markDirty([], true); render(); return; }
+  if (t.dataset.rate) { const v = +t.value; S.settings.rates = S.settings.rates || {}; S.settings.ratesAt = S.settings.ratesAt || {}; if (v>0) { S.settings.rates[t.dataset.rate] = v; S.settings.ratesAt[t.dataset.rate] = todayStr(); } else { delete S.settings.rates[t.dataset.rate]; delete S.settings.ratesAt[t.dataset.rate]; } recomputeBudgets(); markDirty([], true); render(); return; }
   if (t.dataset.srccur) { const s = S.sources.find(s=>s.id===t.dataset.srccur); if (s){ s.cur = t.value; stamp(s); runAnalyze(); render(); } return; }
   if (t.id === 'file') { handleFiles([...t.files]); t.value=''; return; }
   if (t.id === 'restoreFile') { restoreFromFile(t.files[0]); t.value=''; return; }
@@ -2329,6 +2363,12 @@ document.addEventListener('dragover', e=>{ const d = e.target.closest && e.targe
 document.addEventListener('dragleave', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
 document.addEventListener('drop', e=>{ const d = e.target.closest && e.target.closest('#drop'); if (d){ e.preventDefault(); d.classList.remove('over'); handleFiles([...e.dataTransfer.files]); } });
 $('#savePill').addEventListener('click', ()=>{ go('plan'); setTimeout(()=>{ const el = $('#sync'); if (el) el.scrollIntoView({block:'start'}); }, 50); });
+$('#dualBtn').addEventListener('click', ()=>{
+  S.settings.dualCur = !S.settings.dualCur;
+  if (S.settings.dualCur && !secCur()) { S.settings.dualCur = false; toast('先在「固定支出与预算」里填人民币汇率，才能同时显示两种货币'); go('plan'); return; }
+  markDirty([], true); render();
+  toast(S.settings.dualCur ? '主要金额下面会同时显示' + DISP[secCur()][0] : '已关闭双币显示');
+});
 $('#prevM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,-1); S.year = null; render(); });
 $('#nextM').addEventListener('click', ()=>{ S.month = shiftMonth(S.month,1); S.year = null; render(); });
 function subInfo(x){
@@ -2365,6 +2405,27 @@ function recomputeBudgets(){
     }
   }
   S.settings.budgets = out; S.budgetRateMissing = missing;
+}
+function usedCurs(){
+  const set = new Set();
+  if (dispCur() !== 'JPY') set.add(dispCur());
+  if (S.settings.dualCur && secCur() && secCur() !== 'JPY') set.add(secCur());
+  for (const x of S.sources) if (x.cur && x.cur !== 'JPY') set.add(x.cur);
+  for (const a of (S.assets||[])) if (a.cur && a.cur !== 'JPY') set.add(a.cur);
+  for (const r of Object.values(S.settings.budgetRaw||{})) if (r.cur && r.cur !== 'JPY') set.add(r.cur);
+  for (const l of Object.values(S.settings.budgetItems||{})) for (const i of l) if (i.cur && i.cur !== 'JPY') set.add(i.cur);
+  return [...set];
+}
+function staleRates(){
+  if (S.demo) return [];
+  const at = S.settings.ratesAt || {}, rates = S.settings.rates || {}, today = todayStr(), out = [];
+  for (const c of usedCurs()) {
+    if (!(+rates[c] > 0)) continue;
+    if (!at[c]) { S.settings.ratesAt = at; at[c] = today; continue; }
+    const days = dayDiff(today, at[c]);
+    if (days > 30) out.push({ c, days });
+  }
+  return out;
 }
 function syncBudgetFromItems(){ recomputeBudgets(); }
 async function fetchRate(base){
