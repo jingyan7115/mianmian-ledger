@@ -1206,6 +1206,20 @@ function refreshSpreads(){
     }
   }
 }
+function addMonthsDate(d, k){
+  const ym = shiftMonth(d.slice(0,7), k); const [y, m] = ym.split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return ym + '-' + pad(Math.min(+d.slice(8,10), last));
+}
+function upcomingSpreads(){
+  const today = todayStr(), t0 = Date.parse(today);
+  return (S.settings.spreads || []).filter(r=>r.kw && +r.n > 1).map(r=>{
+    const hits = S.txns.filter(x=>!x.virt && x._spread && x._spread.rule===r.id).sort((a,b)=>a.d<b.d?1:-1);
+    if (!hits.length) return { r, none:true };
+    const last = hits[0], next = addMonthsDate(last.d, +r.n);
+    return { r, last, next, days: Math.round((Date.parse(next) - t0) / 864e5), amt: fmtCur(last.a, curOfSrc(last.s)) };
+  });
+}
 function refreshFixedIncome(){
   S.txns = S.txns.filter(x=>!x.virt);
   refreshSpreads();
@@ -1263,6 +1277,7 @@ function viewOverview(){
     <div class="card tile excl"><div class="lab">已排除，没算进支出</div><div class="val num">${yen2(M.excludedAmt)}</div><div class="foot">重复 ${M.dup.length} 笔 · 转账/还款/充值 ${M.xfer.length} 笔</div></div>
   </div>`;
   const alerts = [];
+  for (const u of upcomingSpreads()) if (!u.none && u.days >= -7 && u.days <= 14) alerts.push(`<div class="alert ${u.days<0?'warn':'info'}"><span>${u.days<0 ? `「${esc(u.r.name||u.r.kw)}」原本预计 ${u.next.slice(5).replace('-','/')} 交，过了 ${-u.days} 天还没在账单里看到。` : `「${esc(u.r.name||u.r.kw)}」预计 ${u.next.slice(5).replace('-','/')} 要交（${u.days===0?'就是今天':'还有 '+u.days+' 天'}），上次是 <span class="num">${u.amt}</span>，记得留好钱。`}</span></div>`);
   const stale = staleRates();
   if (stale.length) alerts.push(`<div class="alert warn"><span>${stale.map(o=>DISP[o.c][0]+'汇率已经 '+o.days+' 天没更新了').join('，')}。换算出来的金额可能和现在差得有点远。</span><span class="acts"><button class="btn sm" data-act="refresh-rates">一键更新</button><button class="btn sm" data-act="goto-rates2">手动改</button></span></div>`);
   if (!S.demo && !Sync.cfg) alerts.push(`<div class="alert info"><span>现在只保存在这台设备。想在手机和电脑上都能用，可以连上你的 GitHub 私有仓库同步。</span><button class="btn sm" data-act="goto-sync">设置同步</button></div>`);
@@ -1304,11 +1319,13 @@ function viewOverview(){
   const fiHtml = fiList.length ? `<div style="margin-top:12px"><h2 style="font-size:14px;margin:0 0 4px">固定收入</h2><div class="list">${fiList.map(f=>{ const st = (S.fiStatus||{})[f.id+S.month]; const amt = fmtCur(+f.amt, f.cur||'JPY');
       return `<div class="li"><span>${esc(f.name||'固定收入')} <span class="muted num small">${amt}</span></span>${st && st.seen ? `<span class="pill ok">账单里已有 ${st.seen.d.slice(5).replace('-','/')}</span>` : st && st.added ? `<span class="pill xfer">已自动计入</span>` : `<span class="pill none">${+(f.day||1)}号以后计入</span>`}</div>`; }).join('')}</div></div>` : '';
 
+  const ups = upcomingSpreads();
+  const upHtml = ups.length ? `<div style="margin-top:12px"><h2 style="font-size:14px;margin:0 0 4px">周期性大额 · 下一次</h2><div class="list">${ups.map(u=>`<div class="li"><span>${esc(u.r.name||u.r.kw)} ${u.none?'':`<span class="muted num small">${u.amt}</span>`}</span>${u.none ? `<span class="pill none">账单里还没找到</span>` : `<span class="pill ${u.days<0?'sus':u.days<=30?'xfer':'none'}">约 ${u.next.replace(/-/g,'/')}${u.days<0?' · 已过 '+(-u.days)+' 天':u.days<=60?' · 还有 '+u.days+' 天':''}</span>`}</div>`).join('')}</div><p class="small muted" style="margin:6px 0 0">按上一次交的日期和金额，加上规则里的间隔推算。</p></div>` : '';
   return tiles + `<div class="alerts">${alerts.join('')}</div>` + `
   <div class="grid two">
     <div class="card"><h2>支出分类与预算</h2><p class="h2sub">カテゴリ別（べつ）の支出（ししゅつ）と予算（よさん）</p><div class="bars">${bars}</div>${refundLine}</div>
     <div class="grid" style="align-content:start">
-      <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div>${fiHtml}</div>
+      <div class="card"><h2>固定支出</h2><p class="h2sub">每月该扣的有没有扣 · 合计 <span class="num">${yen(fixedTotal)}</span>${M.income?` · 占收入 ${Math.round(fixedTotal/M.income*100)}%`:''}</p><div class="list">${fixedHtml}</div>${fiHtml}${upHtml}</div>
       ${reconCard()}
     </div>
   </div>` + reviewCard() + trendCard() + assetCard() + yearCard();
@@ -2188,7 +2205,7 @@ function spreadCard(){
       <label class="field">多久交一次<select data-sp="${esc(r.id)}" data-k="n">${[[2,'2 个月'],[3,'3 个月（季度）'],[6,'6 个月（半年）'],[12,'12 个月（一年）']].map(([v,t])=>`<option value="${v}" ${+r.n===v?'selected':''}>${t}</option>`).join('')}</select></label>
       <label class="field">这笔钱管的是<select data-sp="${esc(r.id)}" data-k="dir"><option value="fwd" ${r.dir!=='back'?'selected':''}>交了以后的几个月（先交后用）</option><option value="back" ${r.dir==='back'?'selected':''}>交之前的几个月（先用后交）</option></select></label>
       <button class="iconbtn" data-act="del-sp" data-id="${esc(r.id)}" aria-label="删除" style="align-self:end">×</button>
-    </div>`).join('');
+    </div>${(()=>{ const u = upcomingSpreads().find(u=>u.r.id===r.id); if (!u) return ''; return `<p class="small muted" style="margin:-4px 0 10px">${u.none ? '账单里还没找到含这个关键词的支出。' : `上次 ${u.last.d} 交了 <span class="num">${u.amt}</span> → 下次约 <b class="num">${u.next}</b>`}</p>`; })()}`).join('');
   const hits = S.txns.filter(x=>x._spread && x._spread.rule).length;
   return `<div class="card"><h2>周期性支出（分摊）</h2><p class="h2sub">房租半年一交、水电按季度交这类，一次付了好几个月的钱。按规则把它平均分到它管的那几个月里，每个月的支出和预算就不会忽高忽低。</p>
     ${rows}
