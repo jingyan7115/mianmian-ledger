@@ -143,6 +143,7 @@ tr:last-child td{border-bottom:0}
 td.r,th.r{text-align:right}
 tr.excluded td{color:var(--muted)}
 tr.excluded td .desc{text-decoration:line-through;text-decoration-color:var(--line)}
+tr.spreadorig td.r.num{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
 .why{font-size:12px;color:var(--muted);margin-top:2px}
 .src{font-size:12px;color:var(--muted);white-space:nowrap}
 td select{font-size:13px;padding:3px 6px;max-width:150px}
@@ -600,6 +601,7 @@ function sim(a,b){
 const TYPE_PRI = { wallet:4, bank:3, card:3, other:2, app:1 };
 
 function analyze(txns, sources, learned){
+  txns = txns.filter(x=>!x.virt);
   const S = Object.fromEntries(sources.map(s=>[s.id,s]));
   const typeOf = x => (S[x.s] && S[x.s].type) || 'other';
   const curOf = x => (S[x.s] && S[x.s].cur) || 'JPY';
@@ -719,7 +721,7 @@ function ymOf(d){ return d.slice(0,7); }
 function monthSummary(txns, ym, conv){
   conv = conv || (x=>x.a);
   const L = txns.filter(x=>ymOf(x.d)===ym);
-  const ok = L.filter(x=>x.st==='ok');
+  const ok = L.filter(x=>x.st==='ok' && !x._spread);
   let income=0, expense=0, refund=0, save=0, reimb=0, reimbIn=0;
   const byCat = {}, norate = [];
   for (const x of ok){
@@ -745,7 +747,7 @@ function monthSummary(txns, ym, conv){
 }
 function fixedStatus(fixed, txns, ym, conv){
   conv = conv || (x=>x.a);
-  const L = txns.filter(x=>ymOf(x.d)===ym && x.o && x.st==='ok');
+  const L = txns.filter(x=>ymOf(x.d)===ym && x.o && x.st==='ok' && !x._spread);
   const usedIds = new Set();
   return fixed.map(f=>{
     const kw = norm(f.kw||'');
@@ -825,7 +827,7 @@ function pillIdle(){
   if (Sync.last) return setSave('ok', '已同步 ' + Sync.last.toTimeString().slice(0,5));
   setSave('', '同步中…');
 }
-const DERIVED = ['sus','warn','_sw'];
+const DERIVED = ['sus','warn','_sw','_spread'];
 function compactTx(x){
   const y = { ...x };
   for (const k of DERIVED) delete y[k];
@@ -834,14 +836,14 @@ function compactTx(x){
   return y;
 }
 function stateBody(compact){
-  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, fixedIncome:S.settings.fixedIncome||[], learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', dualCur:!!S.settings.dualCur, ratesAt:S.settings.ratesAt||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
+  return { v:2, sources:S.sources, settings:{ budgets:S.settings.budgets, fixed:S.settings.fixed, fixedIncome:S.settings.fixedIncome||[], spreads:S.settings.spreads||[], learned:S.settings.learned, rates:S.settings.rates||{}, budgetItems:S.settings.budgetItems||{}, budgetRaw:S.settings.budgetRaw||{}, budgetDefCur:S.settings.budgetDefCur||'JPY', dispCur:S.settings.dispCur||'JPY', dualCur:!!S.settings.dualCur, ratesAt:S.settings.ratesAt||{}, learnedSub:S.settings.learnedSub||{}, assetName:S.settings.assetName||'', assetTarget:S.settings.assetTarget||0, su:S.settings.su||0 },
            imports:S.settings.imports.slice(-200), txns: compact ? S.txns.filter(x=>!x.virt).map(compactTx) : S.txns.filter(x=>!x.virt), assets:S.assets||[], del:S.del };
 }
 function applyState(b){
   if (!b) return;
   S.sources = Array.isArray(b.sources) ? b.sources : [];
   const st = b.settings || {};
-  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.fixedIncome = st.fixedIncome || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.dualCur = !!st.dualCur; S.settings.ratesAt = st.ratesAt || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
+  S.settings.budgets = st.budgets || {}; S.settings.fixed = st.fixed || []; S.settings.fixedIncome = st.fixedIncome || []; S.settings.spreads = st.spreads || []; S.settings.learned = st.learned || {}; S.settings.rates = st.rates || {}; S.settings.budgetItems = st.budgetItems || {}; S.settings.budgetRaw = st.budgetRaw || {}; S.settings.budgetDefCur = st.budgetDefCur || 'JPY'; S.settings.dispCur = st.dispCur || 'JPY'; S.settings.dualCur = !!st.dualCur; S.settings.ratesAt = st.ratesAt || {}; S.settings.learnedSub = st.learnedSub || {}; S.settings.assetName = st.assetName || ''; S.settings.assetTarget = st.assetTarget || 0; S.settings.su = st.su || 0;
   S.settings.imports = Array.isArray(b.imports) ? b.imports : (st.imports || []);
   S.txns = Array.isArray(b.txns) ? b.txns : [];
   S.assets = Array.isArray(b.assets) ? b.assets : [];
@@ -1180,8 +1182,33 @@ function clearDemo(){
 }
 
 // ---------- render ----------
+function spreadRuleFor(x){
+  if (x.sp) return x.sp.n > 1 ? x.sp : null;
+  const n = norm(x.t);
+  for (const r of (S.settings.spreads || [])) { const k = norm(r.kw||''); if (k && +r.n > 1 && n.includes(k)) return { n:+r.n, dir:r.dir||'fwd', rule:r.id }; }
+  return null;
+}
+function refreshSpreads(){
+  for (const x of S.txns) {
+    delete x._spread;
+    if (x.virt || !x.o || x.st !== 'ok') continue;
+    const sp = spreadRuleFor(x); if (!sp) continue;
+    x._spread = sp;
+    const n = Math.min(24, sp.n), ym0 = ymOf(x.d), day = +x.d.slice(8,10);
+    const start = sp.dir === 'back' ? shiftMonth(ym0, -n) : ym0;
+    const q = curOfSrc(x.s) === 'JPY' ? 1 : 100;
+    const part = Math.floor(x.a / n * q) / q;
+    for (let k = 0; k < n; k++){
+      const ym = shiftMonth(start, k); const [yy, mm] = ym.split('-').map(Number);
+      const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+      const a = k === n-1 ? Math.round((x.a - part*(n-1))*q)/q : part;
+      S.txns.push({ i:'sp-'+x.i+'-'+k, s:x.s, d: ym + '-' + pad(Math.min(day, last)), t:x.t, a, o:1, c:x.c, sb:x.sb, st:'ok', m:1, mc:1, virt:1, spOf:x.i, spK:k+1, spN:n });
+    }
+  }
+}
 function refreshFixedIncome(){
   S.txns = S.txns.filter(x=>!x.virt);
+  refreshSpreads();
   const list = S.settings.fixedIncome || [];
   if (!list.length) { S.fiStatus = {}; return; }
   const today = todayStr(), curYM = today.slice(0,7), status = {};
@@ -1259,7 +1286,7 @@ function viewOverview(){
     let subHtml = '';
     if (subs.length) {
       const spentBy = {}; let unassigned = 0;
-      for (const x of S.txns) { if (ymOf(x.d)!==S.month || x.st!=='ok' || !x.o || x.c!==c.k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) spentBy[sid] = (spentBy[sid]||0) + v; else unassigned += v; }
+      for (const x of S.txns) { if (ymOf(x.d)!==S.month || x.st!=='ok' || x._spread || !x.o || x.c!==c.k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) spentBy[sid] = (spentBy[sid]||0) + v; else unassigned += v; }
       subHtml = `<div class="subbars">${subs.map(i=>{ const sp = spentBy[i.id]||0, bud = (i.amtJ != null ? +i.amtJ : +i.amt) || 0, r = bud ? sp/bud : 0; const cl = !bud ? '' : r>1 ? 'bad' : r>0.8 ? 'warn' : 'good';
         return `<div class="subbar"><span class="nm">${esc(i.name||'未命名')}</span><span class="amt num">${yen(sp)}${bud?` <span class="muted">/ ${yen(bud)}</span>`:''}${bud&&sp>bud?` <span class="neg">超 ${yen(sp-bud)}</span>`:''}</span><div class="track"><div class="fill ${cl}" style="width:${bud?Math.min(100,r*100).toFixed(1):0}%"></div></div></div>`; }).join('')}
         ${unassigned ? `<div class="subbar"><span class="nm muted">未指定小项</span><span class="amt num muted">${yen(unassigned)}</span><button class="btn sm" data-catgo="${c.k}" style="grid-column:1 / 3;justify-self:start">去指定</button></div>` : ''}</div>`;
@@ -1271,7 +1298,7 @@ function viewOverview(){
   // fixed
   const fs = fixedStatus(S.settings.fixed, S.txns, S.month, CV);
   const fixedTotal = S.settings.fixed.reduce((s,f)=>s+(+f.amt||0),0);
-  const fixedHtml = fs.length ? fs.map(({f,hit})=>`<div class="li"><span>${esc(f.name)} <span class="muted num small">${yen(f.amt||0)}</span></span>${hit?`<span class="pill ok">已扣 ${hit.d.slice(5).replace('-','/')} · <span class="num">${fmtTx(hit)}</span></span>`:`<span class="pill none">本月没看到</span>`}</div>`).join('')
+  const fixedHtml = fs.length ? fs.map(({f,hit})=>`<div class="li"><span>${esc(f.name)} <span class="muted num small">${yen(f.amt||0)}</span></span>${hit?`<span class="pill ok">${hit.virt?'已分摊':'已扣'} ${hit.d.slice(5).replace('-','/')} · <span class="num">${fmtTx(hit)}</span></span>`:`<span class="pill none">本月没看到</span>`}</div>`).join('')
     : `<div class="empty">还没登记固定支出。<br><button class="btn sm" data-go="plan" style="margin-top:8px">去登记</button></div>`;
   const fiList = (S.settings.fixedIncome||[]).filter(f=>+f.amt>0 && f.from && f.from <= S.month && (!f.to || f.to >= S.month));
   const fiHtml = fiList.length ? `<div style="margin-top:12px"><h2 style="font-size:14px;margin:0 0 4px">固定收入</h2><div class="list">${fiList.map(f=>{ const st = (S.fiStatus||{})[f.id+S.month]; const amt = fmtCur(+f.amt, f.cur||'JPY');
@@ -1294,7 +1321,7 @@ function reconCard(){
   for (const c of cards){
     const byM = {};
     const CV = conv();
-    for (const x of S.txns) if (x.s===c.id) { const v = CV(x); if (v == null) continue; const k = ymOf(x.d); byM[k] = (byM[k]||0) + (x.o ? v : -v); }
+    for (const x of S.txns) if (x.s===c.id && !x.virt) { const v = CV(x); if (v == null) continue; const k = ymOf(x.d); byM[k] = (byM[k]||0) + (x.o ? v : -v); }
     for (const [ym,v] of Object.entries(byM)) totals.push({ name:c.name, ym, v });
   }
   const rows = pays.map(p=>{
@@ -1457,13 +1484,13 @@ function reviewCard(){
   const M = monthSummary(S.txns, RM, CV);
   if (!M.count) return '';
   const hist = [RM, shiftMonth(RM,-1), shiftMonth(RM,-2)].map(ym => ({ ym, M: monthSummary(S.txns, ym, CV) })).filter(o => o.M.count);
-  const subSpent = (ym, k) => { const by = {}; for (const x of S.txns) { if (ymOf(x.d)!==ym || x.st!=='ok' || !x.o || x.c!==k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) by[sid] = (by[sid]||0) + v; } return by; };
+  const subSpent = (ym, k) => { const by = {}; for (const x of S.txns) { if (ymOf(x.d)!==ym || x.st!=='ok' || x._spread || !x.o || x.c!==k) continue; const v = CV(x); if (v == null) continue; const sid = subOf(x); if (sid) by[sid] = (by[sid]||0) + v; } return by; };
   const r500 = v => Math.max(500, Math.ceil(v/500)*500);
   const rows = [];
   for (const k of cats) {
     const items = (BI[k] || []).filter(i => +i.amt > 0 && i.amtJ != null);
     let unassigned = 0;
-    if (items.length) for (const o of hist) for (const x of S.txns) { if (ymOf(x.d)!==o.ym || x.st!=='ok' || !x.o || x.c!==k || subOf(x)) continue; unassigned += CV(x) || 0; }
+    if (items.length) for (const o of hist) for (const x of S.txns) { if (ymOf(x.d)!==o.ym || x.st!=='ok' || x._spread || !x.o || x.c!==k || subOf(x)) continue; unassigned += CV(x) || 0; }
     const lines = items.length
       ? items.map(i => ({ k, sub: i.id, name: (CAT_NAME[k]||k) + ' · ' + (i.name||'未命名'), budget: +i.amtJ, series: hist.map(o => subSpent(o.ym, k)[i.id] || 0) }))
       : [{ k, sub: '', name: CAT_NAME[k]||k, budget: +budgets[k], series: hist.map(o => o.M.byCat[k] || 0) }];
@@ -1508,7 +1535,7 @@ function yearCard(){
     : `<tr><td class="muted">${i+1}月</td><td colspan="4" class="muted small">没有账单</td></tr>`).join('');
   const mer = {};
   for (const x of S.txns) {
-    if (x.d.slice(0,4) !== Y || x.st !== 'ok' || !x.o || x.c === 'save' || x.c === 'reimb') continue;
+    if (x.d.slice(0,4) !== Y || x.st !== 'ok' || x._spread || !x.o || x.c === 'save' || x.c === 'reimb') continue;
     const v = CV(x); if (v == null) continue;
     const key = x.c === 'cash' ? '__cash' : (cleanDesc(x.t) || norm(x.t)); if (!key) continue;
     const label = x.c === 'cash' ? '现金取出（ATM）' : x.t;
@@ -1562,7 +1589,7 @@ function viewTxns(){
       ${!counted.length ? '<p class="small muted" style="margin:8px 0 0">这个月还没有计入的收入。</p>' : ''}</div>`;
   } else if (S.catFilter) {
     const CV = conv();
-    const CL = L.filter(x=>x.c===S.catFilter && x.st==='ok');
+    const CL = L.filter(x=>x.c===S.catFilter && x.st==='ok' && !x._spread);
     const sum = CL.reduce((a,x)=>a + (x.o ? 1 : -1) * (CV(x)||0), 0);
     catBar = `<div class="catbar"><span>${fmtMonth(S.month)} · <b>${esc(CAT_NAME[S.catFilter]||S.catFilter)}</b> · 共 <b class="num">${CL.length}</b> 笔 · 合计 <b class="num">${yen(sum)}</b></span><span class="acts"><button class="btn sm" data-go="overview">‹ 回概览</button><button class="btn sm" data-act="clear-cat">看全部明细</button></span></div>`;
   }
@@ -1571,6 +1598,11 @@ function viewTxns(){
     <select id="srcFilter" aria-label="来源">${srcOpts}</select></div>
     <div class="tablewrap"><table><thead><tr><th>日期</th><th>内容</th><th>来源</th><th>分类</th><th class="r">金额</th><th class="r">状态</th></tr></thead><tbody id="txBody"></tbody></table></div>
     <p class="small muted">改分类后，同名商户以后会自动用这个分类。标成「重复」或「转账」的不算进支出。</p>`;
+}
+function spreadSel(x){
+  const cur = x.sp ? (x.sp.n > 1 ? x.sp.dir + x.sp.n : 'none') : (x._spread ? 'rule' : '');
+  const opt = (v, t) => `<option value="${v}" ${cur===v?'selected':''}>${t}</option>`;
+  return `<select data-spread="${x.i}" aria-label="分摊" style="font-size:12px;max-width:150px">${x._spread && x._spread.rule ? opt('rule','分摊：按规则') : opt('', '分摊…')}${opt('fwd3','往后 3 个月')}${opt('fwd6','往后 6 个月')}${opt('fwd12','往后 12 个月')}${opt('back2','往前 2 个月')}${opt('back3','往前 3 个月')}${opt('none','不分摊')}</select>`;
 }
 function renderTxView(){ if (S.view === 'txns') { $('#view').innerHTML = viewTxns(); renderTxRows(); } else render(); }
 function renderTxRows(){
@@ -1593,14 +1625,17 @@ function renderTxRows(){
     const cats = x.o ? EXP_CATS : INC_CATS;
     const opts = cats.map(([k,n])=>`<option value="${k}" ${x.c===k?'selected':''}>${esc(n)}</option>`).join('');
     let pill, acts = '';
-    if (x.virt) { pill = '<span class="pill xfer">固定收入</span>'; acts = `<button class="btn sm" data-go="plan">去改</button>`; }
+    if (x.virt && x.spOf) { pill = `<span class="pill xfer">分摊 ${x.spK}/${x.spN}</span>`; acts = ''; const o = byId[x.spOf]; if (o) x._sw = `来自 ${o.d} 那笔 ${fmtCur(o.a, curOfSrc(o.s))}`; }
+    else if (x.virt) { pill = '<span class="pill xfer">固定收入</span>'; acts = `<button class="btn sm" data-go="plan">去改</button>`; }
+    else if (x._spread) { const sp = x._spread; const st = sp.dir==='back' ? shiftMonth(ymOf(x.d), -sp.n) : ymOf(x.d); pill = `<span class="pill xfer">已分摊 ×${sp.n}</span>`; x._sw = `分摊到 ${st} ～ ${shiftMonth(st, sp.n-1)}，每月约 ${fmtCur(x.a/sp.n, curOfSrc(x.s))}${sp.rule?'（按「周期性支出」规则）':''}`; acts = spreadSel(x); }
     else if (x.st==='dup') { pill = '<span class="pill dup">重复</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">其实不重复</button>`; }
     else if (x.st==='xfer') { pill = '<span class="pill xfer">转账</span>'; acts = `<button class="btn sm" data-act="set-ok" data-id="${x.i}">算作收支</button>`; }
     else if (x.sus) { const o = byId[x.sus]; pill = '<span class="pill sus">待确认</span>'; acts = `<button class="btn sm" data-act="sus-yes" data-id="${x.i}">是重复，删这条</button><button class="btn sm" data-act="sus-no" data-id="${x.i}">不是重复</button>`; if (o) x._sw = `可能和「${srcName(o.s)}」${o.d.slice(5).replace('-','/')}「${o.t}」是同一笔`; }
     else { pill = x.m ? '<span class="pill ok">计入·已确认</span>' : '<span class="pill ok">计入</span>'; acts = `<button class="btn sm" data-act="set-dup" data-id="${x.i}">标为重复</button><button class="btn sm" data-act="set-xfer" data-id="${x.i}">标为转账</button>`; }
-    const why = [x.sus && x._sw ? x._sw : x.w, x.bc ? '账单分类：' + x.bc : ''].filter(Boolean).join(' · ');
+    const why = [(x.sus || x._spread || x.spOf) && x._sw ? x._sw : x.w, x.bc ? '账单分类：' + x.bc : ''].filter(Boolean).join(' · ');
     const exc = x.st!=='ok';
-    return `<tr class="${exc?'excluded':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`${x.virt ? `<span class="small">${esc(CAT_NAME[x.c]||'')}</span>` : `<select data-cat="${x.i}" aria-label="分类">${opts}</select>`}${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || !its || !its.length) return ''; const info = subInfo(x), cur = info && info.id; return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}${cur===i.id&&info.how==='kw'?'（自动）':''}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
+    if (!x.virt && !x._spread && x.o && x.st==='ok' && !x.sus) acts += spreadSel(x);
+    return `<tr class="${exc?'excluded':''}${x._spread?' spreadorig':''}"><td class="num">${x.d.slice(5).replace('-','/')}</td><td><div class="desc">${esc(x.t)}</div>${why?`<div class="why">${esc(why)}</div>`:''}</td><td class="src">${esc(srcName(x.s))}</td><td>${exc?'<span class="muted small">—</span>':`${x.virt ? `<span class="small">${esc(CAT_NAME[x.c]||'')}</span>` : `<select data-cat="${x.i}" aria-label="分类">${opts}</select>`}${(()=>{ const its = (S.settings.budgetItems||{})[x.c]; if (!x.o || x.virt || !its || !its.length) return ''; const info = subInfo(x), cur = info && info.id; return `<select data-sub="${x.i}" aria-label="预算小项" style="margin-top:4px;display:block;font-size:12px"><option value="-" ${!cur?'selected':''}>小项：未指定</option>${its.map(i=>`<option value="${esc(i.id)}" ${cur===i.id?'selected':''}>小项：${esc(i.name||'未命名')}${cur===i.id&&info.how==='kw'?'（自动）':''}</option>`).join('')}</select>`; })()}`}</td><td class="r num ${x.o?'':'pos'}">${x.o?'−':'+'}${fmtTx(x)}</td><td class="r"><div class="acts">${pill}${acts}</div></td></tr>`;
   }).join('');
   body.innerHTML = html || `<tr><td colspan="6" class="empty">没有符合条件的记录</td></tr>`;
 }
@@ -2117,6 +2152,7 @@ function viewPlan(){
     <div class="card"><h2>固定支出</h2><p class="h2sub">房租、水电、手机、订阅这类每月都有的。「关键词」写账单里会出现的字，比如 家賃、ドコモ、NETFLIX，我每月帮你核对有没有扣。</p>
       ${fixed}<div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-fixed">＋ 加一项</button><span class="small">每月固定 <b class="num">${yen(fixedTotal)}</b>${avgInc?` · 约占收入 ${Math.round(fixedTotal/avgInc*100)}%`:''}</span></div></div>
     ${fixedIncomeCard()}
+    ${spreadCard()}
     <div class="card"><h2>每月预算</h2><p class="h2sub">只填你在意的分类就好，留空就不设限。金额可以用日元、人民币或美元填，会按汇率自动换算。有小项的分类点一下就能展开或收起。</p>
       <div class="fields" style="margin:0 0 12px">
         <label class="field">汇率：1 人民币 =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="CNY" value="${cnyRate||''}" placeholder="例如 21" style="width:100px"> 日元</span></label>
@@ -2143,6 +2179,21 @@ function ratesCard(){
   const rates = S.settings.rates || {};
   return `<div class="card" id="rates"><h2>汇率</h2><p class="h2sub">外币账单按这里的汇率换算成日元再汇总。汇率要你自己填，可以随时改，改了以后所有月份会重新换算。</p>
     <div class="fields">${curs.map(c=>`<label class="field">1 ${c} =<span style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" data-rate="${c}" value="${rates[c]||''}" placeholder="例如 21"> 日元</span></label>`).join('')}</div></div>`;
+}
+function spreadCard(){
+  const L = S.settings.spreads || [];
+  const rows = L.map(r=>`<div class="firow">
+      <label class="field">名称<input type="text" data-sp="${esc(r.id)}" data-k="name" value="${esc(r.name||'')}" placeholder="例：房租、水电"></label>
+      <label class="field">账单里的关键词<input type="text" data-sp="${esc(r.id)}" data-k="kw" value="${esc(r.kw||'')}" placeholder="例：家賃、東京電力"></label>
+      <label class="field">多久交一次<select data-sp="${esc(r.id)}" data-k="n">${[[2,'2 个月'],[3,'3 个月（季度）'],[6,'6 个月（半年）'],[12,'12 个月（一年）']].map(([v,t])=>`<option value="${v}" ${+r.n===v?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label class="field">这笔钱管的是<select data-sp="${esc(r.id)}" data-k="dir"><option value="fwd" ${r.dir!=='back'?'selected':''}>交了以后的几个月（先交后用）</option><option value="back" ${r.dir==='back'?'selected':''}>交之前的几个月（先用后交）</option></select></label>
+      <button class="iconbtn" data-act="del-sp" data-id="${esc(r.id)}" aria-label="删除" style="align-self:end">×</button>
+    </div>`).join('');
+  const hits = S.txns.filter(x=>x._spread && x._spread.rule).length;
+  return `<div class="card"><h2>周期性支出（分摊）</h2><p class="h2sub">房租半年一交、水电按季度交这类，一次付了好几个月的钱。按规则把它平均分到它管的那几个月里，每个月的支出和预算就不会忽高忽低。</p>
+    ${rows}
+    <div class="toolbar" style="margin:4px 0 0;justify-content:space-between"><button class="btn" data-act="add-sp">＋ 加一条规则</button>${L.length?`<span class="small">已经按规则分摊了 <b class="num">${hits}</b> 笔</span>`:''}</div>
+    <p class="small muted" style="margin:8px 0 0">分摊看的是「每个月实际用掉了多少」，所以交钱那个月银行卡少了一大笔，账本里只算其中一份。单独某一笔也可以在「明细与查重」里手动选分摊方式，手动选的优先。</p></div>`;
 }
 function fixedIncomeCard(){
   const L = S.settings.fixedIncome || [];
@@ -2229,6 +2280,8 @@ document.addEventListener('click', e=>{
     case 'cancel-pending': S.pending = null; if (S.queue && S.queue.length) { toast('已跳过这个文件'); nextInQueue(); } else render(); break;
     case 'confirm-import': confirmImport(); break;
     case 'undo-import': if (arm(b,'undo'+id,'再点一次确认撤销')) undoImport(id); break;
+    case 'add-sp': S.settings.spreads = (S.settings.spreads||[]).concat([{ id:'sp'+rid(), name:'', kw:'', n:6, dir:'fwd' }]); markDirty([], true); render(); break;
+    case 'del-sp': if (arm(b, 'delsp'+id, '再点一次删除')) { S.settings.spreads = (S.settings.spreads||[]).filter(r=>r.id!==id); markDirty([], true); render(); } break;
     case 'add-fi': S.settings.fixedIncome = (S.settings.fixedIncome||[]).concat([{ id:'fi'+rid(), name:'', amt:0, cur:'JPY', cat:'inc_other', day:25, from: nowYM(), to:'', kw:'' }]); markDirty([], true); render(); break;
     case 'del-fi': if (arm(b, 'delfi'+id, '再点一次删除')) { S.settings.fixedIncome = (S.settings.fixedIncome||[]).filter(f=>f.id!==id); markDirty([], true); render(); } break;
     case 'add-fixed': S.settings.fixed.push({ id:'f'+rid(), name:'', amt:0, cat:'sub', kw:'' }); markDirty([], true); render(); break;
@@ -2398,6 +2451,16 @@ document.addEventListener('change', e=>{
     markDirty(ms, true); if (n) toast('同名商户另外 ' + n + ' 笔也改成了「' + CAT_NAME[t.value] + '」');
     if (S.incomeView || S.catFilter) renderTxView(); else renderTxRows(); return;
   }
+  if (t.dataset.spread) {
+    const x = S.txns.find(q=>q.i===t.dataset.spread); if (!x) return;
+    const v = t.value;
+    if (v === '' || v === 'rule') delete x.sp;
+    else if (v === 'none') x.sp = { n:1 };
+    else { const m = v.match(/^(fwd|back)(\d+)$/); if (m) x.sp = { dir:m[1], n:+m[2] }; }
+    stamp(x); markDirty([]);
+    render();
+    return;
+  }
   if (t.dataset.sub) {
     const x = S.txns.find(q=>q.i===t.dataset.sub); if (!x) return;
     x.sb = t.value; stamp(x);
@@ -2409,6 +2472,11 @@ document.addEventListener('change', e=>{
     if (S.incomeView || S.catFilter) renderTxView(); else renderTxRows(); return;
   }
   if (t.dataset.srctype) { const s = S.sources.find(s=>s.id===t.dataset.srctype); if (s){ s.type = t.value; stamp(s); runAnalyze(); } return; }
+  if (t.dataset.sp) {
+    const r = (S.settings.spreads||[]).find(r=>r.id===t.dataset.sp); if (!r) return;
+    const k = t.dataset.k; r[k] = k === 'n' ? +t.value : t.value.trim();
+    markDirty([], true); render(); return;
+  }
   if (t.dataset.fi) {
     const f = (S.settings.fixedIncome||[]).find(f=>f.id===t.dataset.fi); if (!f) return;
     const k = t.dataset.k;
